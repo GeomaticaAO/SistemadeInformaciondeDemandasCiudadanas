@@ -135,7 +135,7 @@ var baseOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', 
 //incluir al mapa la capa de colonias//
         var coloniasLayer;
 
-        fetch("archivos/vectores/_colonias_wgs84_geojson_renombrado.geojson")
+        fetch("archivos/vectores/colonias_wgs84_geojson_renombrado.geojson")
         .then(res => res.json())
         .then(data => {
 
@@ -1053,4 +1053,5 @@ function generarTablaResumen(datos){
 
 </body>
 </html>
+
 
