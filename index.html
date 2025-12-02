@@ -26,15 +26,69 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
-  <style>
-    body { margin:0; font-family:'Montserrat', sans-serif; }
-    .navbar { background-color:#922B21; color:#fff; }
-    .navbar-brand span { color:#fff; font-weight:600; }
-    .main-container { display:flex; height:calc(100vh - 60px); margin-top:60px; }
-    #sidebar { width:700px; background:#f5f5f5; padding:10px; overflow-y:auto; }
-    #map { flex:1; }
-    canvas { margin-bottom:20px; }
-  </style>
+<style>
+  /* Base */
+  body { margin:0; font-family:'Montserrat', sans-serif; }
+  .navbar { background-color:#922B21; color:#fff; }
+  .navbar-brand span { color:#fff; font-weight:600; }
+
+  /* Layout principal */
+  .main-container {
+    display:flex;
+    height:calc(100vh - 60px);
+    margin-top:60px;
+    position: relative; /* necesario para posicionar la pestaña respecto al contenedor */
+  }
+
+  /* Sidebar */
+  #sidebar {
+    width:700px;           /* valor usado para ubicar la pestaña en el borde */
+    background:#f5f5f5;
+    padding:10px;
+    overflow-y:auto;
+  }
+
+  /* Sidebar oculto */
+  #sidebar.hidden {
+    display: none;
+  }
+
+  /* Mapa */
+  #map { flex:1; }
+  canvas { margin-bottom:20px; }
+
+  /* Pestaña flotante pegada al borde del sidebar visible */
+  #sidebar {
+  position: relative; /* necesario para posicionar la pestaña dentro */
+}
+
+#sidebarToggleTab {
+  position: absolute;
+  top: 10px;            /* parte superior del sidebar */
+  right: -40px;         /* se sale un poco del borde derecho */
+  background: #922B21;
+  color: #fff;
+  padding: 6px 10px;
+  font-size: 14px;
+  cursor: pointer;
+  z-index: 1000;
+  border-radius: 0 4px 4px 0;
+  user-select: none;
+}
+
+  /* Cuando el sidebar está oculto, la pestaña se pega al borde izquierdo de la pantalla */
+  /* IMPORTANTE: para que esta regla funcione, #sidebarToggleTab debe estar DESPUÉS de #sidebar en el DOM */
+  #sidebar.hidden ~ #sidebarToggleTab {
+    left: 0;
+  }
+
+  /* Ajustes en pantallas pequeñas: sidebar más estrecho y pestaña siguiendo el borde */
+  @media (max-width: 768px) {
+    #sidebar { width: 320px; }
+    #sidebarToggleTab { left: 320px; }
+    #sidebar.hidden ~ #sidebarToggleTab { left: 0; }
+  }
+</style>
 </head>
 <body>
 
@@ -48,17 +102,23 @@
     </div>
   </nav>
 
-  <!-- Contenedor principal -->
-  <div class="main-container">
+      <!-- Contenedor principal -->
+      <div class="main-container">
+
+        <!-- Pestaña flotante para ocultar/mostrar el sidebar -->
+        <div id="sidebarToggleTab">☰</div>
+
         <!-- Sidebar -->
         <div id="sidebar">
+        <div id="sidebarToggleTab">☰</div>
             
         <h4 class="sidebar-title">Buscar por folio o colonia</h4>
         <div class="input-group mb-3">
         <input type="text" id="buscadorGeneral" class="form-control" placeholder="Ingrese folio o colonia" list="sugerenciasColonias">
         <datalist id="sugerenciasColonias"></datalist>
-        <button class="btn btn-primary" id="btnBuscarGeneral">Buscar</button>
-        <button class="btn btn-secondary" id="btnResetBuscar">Limpiar</button>
+        <button class="btn btn-primary btn-sm" id="btnBuscarGeneral">Buscar</button>
+        <button class="btn btn-secondary btn-sm" id="btnResetBuscar">Limpiar</button>
+
         </div>
 
         <h4 class="sidebar-title">Filtrar por tipo</h4>
@@ -73,8 +133,11 @@
 
         <h4 class="sidebar-title">Filtrar por mes</h4>
         <select id="filtroMes" class="form-select mb-3">
-        <option value="Todos">Todos</option>
+          <option value="Todos">Todos</option>
         </select>
+
+        <!-- Botón para aplicar filtros -->
+        <button class="btn btn-success btn-sm mb-3" id="btnAplicarFiltros">Aplicar filtros</button>
 
         <h4 class="sidebar-title">Estadísticas</h4>
         <canvas id="chartTipos"></canvas>
@@ -263,33 +326,42 @@ map.on('click', function () {
 
 
             // CORREGIDO: leer GeoJSON y guardar FeatureCollection completo
-                fetch("archivos/solicitudes/Diciembre2025.geojson")
-                .then(res => res.json())
-                .then(data => {
-                    solicitudesGeoJSON = data; // ✅ guardar el FeatureCollection completo
+            fetch("archivos/solicitudes/Diciembre2025.geojson")
+              .then(res => res.json())
+              .then(data => {
+                solicitudesGeoJSON = data; // ✅ guardar el FeatureCollection completo
 
-                    solicitudes = data.features
-                    .filter(f => f.geometry && f.geometry.type === "Point" && Array.isArray(f.geometry.coordinates))
-                    .map(f => {
-                        return {
-                        "Número folio": f.properties["Número folio"],
-                        "Tipo de reporte": f.properties["Tipo de reporte"],
-                        "Estado Reporte": f.properties["Estado Reporte"],
-                        "Fecha reporte": f.properties["Fecha reporte"],
-                        "Nombre Ciudadano": f.properties["Nombre Ciudadano"],
-                        "Teléfono": f.properties["Teléfono"],
-                        "Punto de referencia": f.properties["Punto de referencia"],
-                        "Coordenada X": f.geometry.coordinates[0], // lon
-                        "Coordenada Y": f.geometry.coordinates[1], // lat
-                        "Colonia": f.properties["name"] || null
-                        };
-                    });
+                solicitudes = data.features
+                  .filter(f => f.geometry && f.geometry.type === "Point" && Array.isArray(f.geometry.coordinates))
+                  .map(f => {
+                    return {
+                      "Número folio": f.properties["Número folio"],
+                      "Tipo de reporte": f.properties["Tipo de reporte"],
+                      "Estado Reporte": f.properties["Estado Reporte"],
+                      "Fecha reporte": f.properties["Fecha reporte"],
+                      "Nombre Ciudadano": f.properties["Nombre Ciudadano"],
+                      "Teléfono": f.properties["Teléfono"],
+                      "Punto de referencia": f.properties["Punto de referencia"],
+                      "Coordenada X": f.geometry.coordinates[0], // lon
+                      "Coordenada Y": f.geometry.coordinates[1], // lat
+                      "Colonia": f.properties["name"] || null
+                    };
+                  });
 
-                    console.log("✅ Solicitudes cargadas:", solicitudes.length);
-                    inicializarFiltros();
-                    renderizar("Todos","Todos","Todos");
+                // 👇 aquí van tus inicializaciones y renderizado
+                console.log("✅ Solicitudes cargadas:", solicitudes.length);
+                inicializarFiltros();
+                renderizar("Todos","Todos","Todos");
+
+                // 👇 botón aplicar filtros
+                document.getElementById("btnAplicarFiltros").addEventListener("click", () => {
+                  const tipo   = document.getElementById("filtroTipo").value;
+                  const estado = document.getElementById("filtroEstado").value;
+                  const mes    = document.getElementById("filtroMes").value;
+                  renderizar(tipo, estado, mes);
                 });
-                    
+
+              }); // ← cierre correcto del .then(data => { ... })
 
                 // CORREGIDO: Buscar por folio o colonia
             document.getElementById("btnBuscarGeneral").addEventListener("click", () => {
@@ -433,11 +505,7 @@ map.on('click', function () {
             selectMes.appendChild(opt);
         });
 
-        // Eventos de cambio: todos los filtros disparan renderizar
-        selectTipo.addEventListener("change", () => renderizar(selectTipo.value, selectEstado.value, selectMes.value));
-        selectEstado.addEventListener("change", () => renderizar(selectTipo.value, selectEstado.value, selectMes.value));
-        selectMes.addEventListener("change", () => renderizar(selectTipo.value, selectEstado.value, selectMes.value));
-        }
+         }
 
            // Renderizar mapa + estadísticas + choropleth por colonias
 function renderizar(filtroTipo, filtroEstado, filtroMes){
@@ -1049,6 +1117,42 @@ function generarTablaResumen(datos){
   tabla += `</tbody></table>`;
   document.getElementById("tablaResumen").innerHTML = tabla;
 }
+
+
+// Mostrar aviso si el celular está en vertical
+function checkOrientation() {
+  if (window.innerHeight > window.innerWidth) {
+    document.getElementById("rotateMessage").style.display = "block";
+  } else {
+    document.getElementById("rotateMessage").style.display = "none";
+  }
+}
+window.addEventListener("resize", checkOrientation);
+window.addEventListener("load", checkOrientation);
+
+// Toggle sidebar con pestaña flotante
+(function initSidebarToggle() {
+  const tab = document.getElementById("sidebarToggleTab");
+  const sidebar = document.getElementById("sidebar");
+
+  if (!tab || !sidebar) return;
+
+  // Estado inicial del icono: siempre barras
+tab.textContent = "☰";
+
+tab.addEventListener("click", () => {
+  sidebar.classList.toggle("hidden");
+
+  // Mantener siempre el mismo icono
+  tab.textContent = "☰";
+
+  // Ajustar mapa al nuevo tamaño
+  if (map && map.invalidateSize) {
+    setTimeout(() => map.invalidateSize(), 300);
+  }
+});
+})();
+
 </script>
 
 </body>
