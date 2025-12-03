@@ -192,8 +192,8 @@
     <div id="sidebar">
       <h4 class="sidebar-title">Buscar por folio o colonia</h4>
       <div class="input-group mb-3">
-        <input type="text" id="buscadorGeneral" class="form-control" placeholder="Ingrese folio o colonia" list="sugerenciasColonias">
-        <datalist id="sugerenciasColonias"></datalist>
+        <input type="text" id="buscadorGeneral" class="form-control" placeholder="Ingrese folio o colonia" autocomplete="off">
+        <datalist id="sugerenciasColonias" style="display:none;"></datalist>
         <button class="btn btn-primary btn-sm" id="btnBuscarGeneral">Buscar</button>
         <button class="btn btn-secondary btn-sm" id="btnResetBuscar">Limpiar</button>
       </div>
@@ -214,6 +214,10 @@
       </select>
 
       <button class="btn btn-success btn-sm mb-3" id="btnAplicarFiltros">Aplicar filtros</button>
+
+      <div id="contadorSolicitudes" style="text-align:center; font-family:'Montserrat', sans-serif; font-size:16px; font-weight:600; color:#922B21; margin-bottom:15px;">
+        Total de solicitudes: <span id="totalSolicitudes">0</span>
+      </div>
 
       <h4 class="sidebar-title">Estadísticas</h4>
       <div class="chart-container">
@@ -880,18 +884,22 @@
       });
     }
 
-    // ========== TABLA RESUMEN ==========
-    // Restaurar comportamiento anterior: la tabla resumen se genera
-    // a partir de los datos filtrados (ignorando la selección puntual de colonia)
-    // y usa la función `generarTablaResumen` como antes.
-    // En móviles: deferimos la actualización para después del renderizado de gráficas
+    // ========== ACTUALIZAR CONTADOR DE SOLICITUDES ==========
     try {
-      const datosParaTabla = idsFiltradosIgnoreCol.map(id => solicitudPorId[id]).filter(Boolean);
+      const totalSpan = document.getElementById('totalSolicitudes');
+      if (totalSpan) totalSpan.textContent = idsFiltradosIgnoreCol.length.toLocaleString('es-MX');
+    } catch (e) {
+      console.log('Error actualizando contador:', e);
+    }
+
+    // ========== TABLA RESUMEN ==========
+    // La tabla resumen SOLO se afecta por el filtro de Tipo (ignora Estado y Mes)
+    try {
       if (isMobile) {
         // Aplazar tabla en móviles para que gráficas se rendericen primero
-        setTimeout(() => generarTablaResumen(datosParaTabla), 100);
+        setTimeout(() => generarTablaResumen(filtroTipo), 100);
       } else {
-        generarTablaResumen(datosParaTabla);
+        generarTablaResumen(filtroTipo);
       }
     } catch (e) {
       console.log('Error actualizando tablaResumen:', e);
@@ -987,7 +995,14 @@
 
   // ========== GENERAR TABLA RESUMEN ==========
   // Tabla resumen (con Pendientes/En Atención + Indicador dinámico + Totales en negritas)
-  function generarTablaResumen(datos){
+  // Solo se afecta por filtro de Tipo, ignora Estado y Mes
+  function generarTablaResumen(filtroTipo){
+    // Filtrar SOLO por tipo (ignorar estado y mes para la tabla)
+    let datos = solicitudes;
+    if (filtroTipo && filtroTipo !== 'Todos') {
+      datos = solicitudes.filter(s => s["Tipo de reporte"] === filtroTipo);
+    }
+    
     let resumen = {};
     datos.forEach(s => {
       if(!s["Fecha reporte"] || !s["Estado Reporte"]) return;
@@ -1464,8 +1479,8 @@
         if (input.value && input.value.length > 0) renderSuggestions(input.value);
       });
       input.addEventListener('blur', () => {
-        // pequeño delay para permitir click en la lista
-        setTimeout(() => { if (autocompleteContainer) autocompleteContainer.style.display = 'none'; }, 150);
+        // delay más largo para permitir click/touch en la lista (especialmente en móvil)
+        setTimeout(() => { if (autocompleteContainer) autocompleteContainer.style.display = 'none'; }, 300);
       });
 
       // Enter: si hay sugerencias visibles, tomar la primera
@@ -1682,6 +1697,8 @@
       if (chartTipos) chartTipos.resize();
       if (chartColonias) chartColonias.resize();
       if (chartEstados) chartEstados.resize();
+      // Re-inicializar autocompletado si es necesario
+      try { if (typeof initializeAutocompleteFallback === 'function') initializeAutocompleteFallback(); } catch(e){}
     }
   }
   
