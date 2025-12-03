@@ -205,8 +205,8 @@
 
 <script>
   // ========== VARIABLES GLOBALES ==========
-  // Detectar si es móvil
-  const isMobile = window.innerWidth <= 768;
+  // Detectar si es móvil (RECALCULAR dinámicamente)
+  let isMobile = window.innerWidth <= 768;
   
   // Declaraciones e inicialización de variables globales usadas en el script
   var map;
@@ -1504,7 +1504,27 @@
     }
     // Reposicionar la pestaña toggle si existe
     try { if (typeof positionToggleTab === 'function') positionToggleTab(); } catch(e){}
+    
+    // IMPORTANTE: Recalcular isMobile y refrescar mapa al cambiar orientación
+    const wasTablet = isMobile;
+    isMobile = window.innerWidth <= 768;
+    
+    if (wasTablet !== isMobile) {
+      console.log('📱 Orientación cambiada. isMobile ahora:', isMobile);
+      // Refrescar el mapa para que se ajuste correctamente
+      if (map && map.invalidateSize) {
+        setTimeout(() => {
+          map.invalidateSize();
+          console.log('✅ Mapa redimensionado');
+        }, 100);
+      }
+      // Redrawing charts con nuevo tamaño
+      if (chartTipos) chartTipos.resize();
+      if (chartColonias) chartColonias.resize();
+      if (chartEstados) chartEstados.resize();
+    }
   }
+  
   window.addEventListener('resize', checkOrientation);
   window.addEventListener('orientationchange', checkOrientation);
   window.addEventListener('load', checkOrientation);
