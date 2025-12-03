@@ -193,6 +193,9 @@
 
 <script>
   // ========== VARIABLES GLOBALES ==========
+  // Detectar si es móvil
+  const isMobile = window.innerWidth <= 768;
+  
   // Declaraciones e inicialización de variables globales usadas en el script
   var map;
   var coloniasLayer = null;
@@ -582,7 +585,11 @@
 
     // ✅ OPTIMIZACIÓN 3: Inicializar capa de puntos UNA SOLA VEZ
     if (!puntosLayer) {
-      puntosLayer = L.markerClusterGroup({ maxClusterRadius: 50 });
+      // En móviles: reducir complejidad de MarkerCluster
+      const clusterConfig = isMobile 
+        ? { maxClusterRadius: 80, disableClusteringAtZoom: 16 }
+        : { maxClusterRadius: 50 };
+      puntosLayer = L.markerClusterGroup(clusterConfig);
       
       // Agregar solo si no está en mapa
       if (!map.hasLayer(puntosLayer)) {
@@ -655,7 +662,7 @@
     }
 
     // ========== GRÁFICAS ==========
-    const chartLimit = 10; // Mostrar top 10 en cada gráfica (aumentado +2)
+    const chartLimit = isMobile ? 6 : 10; // En móviles mostrar solo 6 para mejor rendimiento
     function prepararDatos(obj) {
       let arr = Object.entries(obj);
       arr.sort((a, b) => b[1] - a[1]);
@@ -673,7 +680,7 @@
     if (chartTipos) {
       chartTipos.data.labels = datosTipos.labels;
       chartTipos.data.datasets[0].data = datosTipos.values;
-      chartTipos.update('none');
+      chartTipos.update(isMobile ? 'none' : 'none');
     } else {
       chartTipos = new Chart(document.getElementById('chartTipos'), {
         type: 'bar',
@@ -689,7 +696,7 @@
           indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: false,
-          animation: { duration: 0 },
+          animation: { duration: isMobile ? 0 : 0 },
           plugins: { legend: { display: false } }
         }
       });
@@ -735,7 +742,7 @@
       chartColonias.data.labels = labelsColonias;
       chartColonias.data.datasets = datasetsColonias;
       chartColonias.data.totals = totalsColonias;
-      chartColonias.update('none');
+      chartColonias.update(isMobile ? 'none' : 'none');
     } else {
       chartColonias = new Chart(document.getElementById('chartColonias'), {
         type: 'bar',
@@ -773,7 +780,7 @@
     if (chartEstados) {
       chartEstados.data.labels = datosEstados.labels;
       chartEstados.data.datasets[0].data = datosEstados.values;
-      chartEstados.update('none');
+      chartEstados.update(isMobile ? 'none' : 'none');
     } else {
       chartEstados = new Chart(document.getElementById('chartEstados'), {
         type: 'bar',
@@ -789,7 +796,7 @@
           indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: false,
-          animation: { duration: 0 },
+          animation: { duration: isMobile ? 0 : 0 },
           plugins: { legend: { display: false } }
         }
       });
@@ -799,9 +806,15 @@
     // Restaurar comportamiento anterior: la tabla resumen se genera
     // a partir de los datos filtrados (ignorando la selección puntual de colonia)
     // y usa la función `generarTablaResumen` como antes.
+    // En móviles: deferimos la actualización para después del renderizado de gráficas
     try {
       const datosParaTabla = idsFiltradosIgnoreCol.map(id => solicitudPorId[id]).filter(Boolean);
-      generarTablaResumen(datosParaTabla);
+      if (isMobile) {
+        // Aplazar tabla en móviles para que gráficas se rendericen primero
+        setTimeout(() => generarTablaResumen(datosParaTabla), 100);
+      } else {
+        generarTablaResumen(datosParaTabla);
+      }
     } catch (e) {
       console.log('Error actualizando tablaResumen:', e);
     }
@@ -890,8 +903,8 @@
       try { updateLegend(null); } catch(e){}
     }
 
-    // Ocultar overlay al terminar render (delay para que sea visible)
-    try { setTimeout(hideLoading, 500); } catch(e){}
+    // Ocultar overlay al terminar render (delay mayor en móviles)
+    try { setTimeout(hideLoading, isMobile ? 800 : 500); } catch(e){}
   }
 
   // ========== GENERAR TABLA RESUMEN ==========
@@ -1154,11 +1167,17 @@
       
       solicitudesGeoJSON = data;
 
-      solicitudes = data.features
-        .filter(f => f.geometry && f.geometry.type === "Point" && Array.isArray(f.geometry.coordinates))
-        .map(f => {
+      // En móviles: procesar en chunks para no bloquear UI
+      const processChunk = (features, startIdx = 0) => {
+        const chunkSize = isMobile ? 1000 : 5000; // Procesar en lotes
+        const endIdx = Math.min(startIdx + chunkSize, features.length);
+        
+        for (let i = startIdx; i < endIdx; i++) {
+          const f = features[i];
+          if (!f.geometry || f.geometry.type !== "Point" || !Array.isArray(f.geometry.coordinates)) continue;
+          
           const rawCol = f.properties["name"] || f.properties["NOMBRE"] || f.properties["colonia"] || null;
-          return {
+          solicitudes.push({
             "Número folio": f.properties["Número folio"],
             "Tipo de reporte": f.properties["Tipo de reporte"],
             "Estado Reporte": f.properties["Estado Reporte"],
@@ -1170,13 +1189,21 @@
             "Coordenada Y": f.geometry.coordinates[1],
             "Colonia": rawCol,
             "ColoniaNorm": normalizeKey(rawCol)
-          };
-        });
+          });
+        }
+        
+        // Si hay más datos, procesar siguiente chunk de forma asíncrona
+        if (endIdx < features.length) {
+          setTimeout(() => processChunk(features, endIdx), 10);
+        } else {
+          console.log("✅ Solicitudes cargadas:", solicitudes.length);
+          solicitudesLoaded = true;
+          iniciarSiTodoEstaListo();
+        }
+      };
 
-      console.log("✅ Solicitudes cargadas:", solicitudes.length);
-
-      solicitudesLoaded = true;
-      iniciarSiTodoEstaListo();
+      // Iniciar procesamiento
+      processChunk(data.features);
     })
     .catch(err => console.error("Error al cargar solicitudes:", err));
 
@@ -1456,6 +1483,3 @@
 
 </body>
 </html>
-
-
-
