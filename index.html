@@ -37,56 +37,81 @@
     display:flex;
     height:calc(100vh - 60px);
     margin-top:60px;
-    position: relative; /* necesario para posicionar la pestaña respecto al contenedor */
+    position: relative;
+    overflow: hidden; /* Ocultar cualquier contenido que salga del contenedor */
   }
 
   /* Sidebar */
   #sidebar {
-    width:700px;           /* valor usado para ubicar la pestaña en el borde */
+    width:700px;
     background:#f5f5f5;
     padding:10px;
     overflow-y:auto;
-  }
-
-  /* Sidebar oculto */
-  #sidebar.hidden {
-    display: none;
+    position: relative;
+    transition: all 0.35s ease; /* Animar cambios */
+    flex-shrink: 0; /* No reducir el sidebar */
   }
 
   /* Mapa */
-  #map { flex:1; }
+  #map { 
+    flex:1; 
+    width: 100%;
+    min-width: 0; /* Permitir que el mapa se comprima si es necesario */
+  }
   canvas { margin-bottom:20px; }
 
-  /* Pestaña flotante pegada al borde del sidebar visible */
-  #sidebar {
-  position: relative; /* necesario para posicionar la pestaña dentro */
-}
-
-#sidebarToggleTab {
-  position: absolute;
-  top: 10px;            /* parte superior del sidebar */
-  right: -40px;         /* se sale un poco del borde derecho */
-  background: #922B21;
-  color: #fff;
-  padding: 6px 10px;
-  font-size: 14px;
-  cursor: pointer;
-  z-index: 1000;
-  border-radius: 0 4px 4px 0;
-  user-select: none;
-}
-
-  /* Cuando el sidebar está oculto, la pestaña se pega al borde izquierdo de la pantalla */
-  /* IMPORTANTE: para que esta regla funcione, #sidebarToggleTab debe estar DESPUÉS de #sidebar en el DOM */
-  #sidebar.hidden ~ #sidebarToggleTab {
-    left: 0;
+  /* Pestaña de toggle (posicionada dinámicamente por JS) */
+  #sidebarToggleTab {
+    background: #922B21;
+    color: #fff;
+    padding: 8px 10px;
+    font-size: 16px;
+    cursor: pointer;
+    z-index: 1001;
+    border-radius: 0 4px 4px 0;
+    user-select: none;
+    border: none;
   }
 
-  /* Ajustes en pantallas pequeñas: sidebar más estrecho y pestaña siguiendo el borde */
-  @media (max-width: 768px) {
-    #sidebar { width: 320px; }
-    #sidebarToggleTab { left: 320px; }
-    #sidebar.hidden ~ #sidebarToggleTab { left: 0; }
+  .sidebar-title {
+    font-size: 12px;
+    margin-top: 10px;
+    margin-bottom: 8px;
+  }
+
+  .tabla-resumen table {
+    font-size: 12px;
+  }
+
+  .chart-container {
+    height: 250px;
+    position: relative;
+    margin-bottom: 15px;
+  }
+
+  /* Contenedor específico para gráfica de colonias (más alto para mostrar todos los nombres) */
+  #chartColonias {
+    max-height: 450px !important;
+  }
+
+  /* Loading overlay */
+  #loadingOverlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+  }
+  #loadingOverlay .box {
+    background: rgba(0,0,0,0.7);
+    padding: 12px 18px;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: 600;
   }
 </style>
 </head>
@@ -102,1060 +127,1335 @@
     </div>
   </nav>
 
-      <!-- Contenedor principal -->
-      <div class="main-container">
+  <!-- Aviso para móviles: girar el celular -->
+  <div id="rotateMessage" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;display:flex;align-items:center;justify-content:center;color:#fff;">
+    <div style="text-align:center;padding:20px;max-width:320px;margin:auto;">
+      <div style="font-size:28px;margin-bottom:10px;">↪️</div>
+      <div style="font-size:18px;font-weight:600;">Gire su dispositivo</div>
+      <div style="margin-top:8px;font-size:14px;">Para una mejor visualización, use el modo horizontal.</div>
+    </div>
+  </div>
 
-        <!-- Pestaña flotante para ocultar/mostrar el sidebar -->
-        <div id="sidebarToggleTab">☰</div>
+  <!-- Overlay de carga -->
+  <div id="loadingOverlay"><div class="box">Cargando datos</div></div>
 
-        <!-- Sidebar -->
-        <div id="sidebar">
-        <div id="sidebarToggleTab">☰</div>
-            
-        <h4 class="sidebar-title">Buscar por folio o colonia</h4>
-        <div class="input-group mb-3">
+  <!-- Contenedor principal -->
+  <div class="main-container">
+
+    <!-- Pestaña flotante de toggle (fuera del sidebar para evitar conflictos de posicionamiento) -->
+    <div id="sidebarToggleTab">☰</div>
+
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <h4 class="sidebar-title">Buscar por folio o colonia</h4>
+      <div class="input-group mb-3">
         <input type="text" id="buscadorGeneral" class="form-control" placeholder="Ingrese folio o colonia" list="sugerenciasColonias">
         <datalist id="sugerenciasColonias"></datalist>
         <button class="btn btn-primary btn-sm" id="btnBuscarGeneral">Buscar</button>
         <button class="btn btn-secondary btn-sm" id="btnResetBuscar">Limpiar</button>
+      </div>
 
-        </div>
+      <h4 class="sidebar-title">Filtrar por tipo</h4>
+      <select id="filtroTipo" class="form-select mb-3">
+        <option value="Todos">Todos</option>
+      </select>
 
-        <h4 class="sidebar-title">Filtrar por tipo</h4>
-        <select id="filtroTipo" class="form-select mb-3">
-            <option value="Todos">Todos</option>
-        </select>
+      <h4 class="sidebar-title">Filtrar por estado</h4>
+      <select id="filtroEstado" class="form-select mb-3">
+        <option value="Todos">Todos</option>
+      </select>
 
-        <h4 class="sidebar-title">Filtrar por estado</h4>
-        <select id="filtroEstado" class="form-select mb-3">
-            <option value="Todos">Todos</option>
-        </select>
+      <h4 class="sidebar-title">Filtrar por mes</h4>
+      <select id="filtroMes" class="form-select mb-3">
+        <option value="Todos">Todos</option>
+      </select>
 
-        <h4 class="sidebar-title">Filtrar por mes</h4>
-        <select id="filtroMes" class="form-select mb-3">
-          <option value="Todos">Todos</option>
-        </select>
+      <button class="btn btn-success btn-sm mb-3" id="btnAplicarFiltros">Aplicar filtros</button>
 
-        <!-- Botón para aplicar filtros -->
-        <button class="btn btn-success btn-sm mb-3" id="btnAplicarFiltros">Aplicar filtros</button>
-
-        <h4 class="sidebar-title">Estadísticas</h4>
+      <h4 class="sidebar-title">Estadísticas</h4>
+      <div class="chart-container">
         <canvas id="chartTipos"></canvas>
-        <canvas id="chartColonias" width="450" height="250"></canvas>
-        <canvas id="chartEstados" width="450" height="150"></canvas>
-        <!-- ❌ elimina si ya no quieres la gráfica temporal -->
-        <!-- <canvas id="chartTemporal"></canvas> -->
+      </div>
+      <div class="chart-container">
+        <canvas id="chartColonias"></canvas>
+      </div>
+      <div class="chart-container">
+        <canvas id="chartEstados"></canvas>
+      </div>
 
-        <h4 class="sidebar-title">Tabla resumen</h4>
-        <div id="tablaResumen" class="tabla-resumen"></div>
-        </div>
-
-        <style>
-        /* títulos más pequeños */
-        .sidebar-title {
-            font-size: 12px;
-            margin-top: 10px;
-            margin-bottom: 8px;
-        }
-
-        /* texto de la tabla más compacto */
-        .tabla-resumen table {
-            font-size: 12px;
-        }
-        </style>
+      <h4 class="sidebar-title">Tabla resumen</h4>
+      <div id="tablaResumen" class="tabla-resumen"></div>
+    </div>
 
     <!-- Mapa -->
     <div id="map"></div>
   </div>
 
 <script>
-  var map = L.map('map').setView([19.35, -99.2], 12);
-  // Base OSM como capa base nombrada (requerido por el control)
-var baseOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution:'© OpenStreetMap'
-}).addTo(map);
+  // ========== VARIABLES GLOBALES ==========
+  // Declaraciones e inicialización de variables globales usadas en el script
+  var map;
+  var coloniasLayer = null;
+  var solicitudesGeoJSON = null;
+  var solicitudes = [];
+  var solicitudPorId = {};
+  var allIds = [];
+  var indiceTipo = {};
+  var indiceEstado = {};
+  var indiceMes = {};
+  var estadisticasPorColonia = {};
+  var puntosLayer = null;
+  var legendControl = null;
+  var puntosToggleControl = null;
+  var chartTipos = null, chartColonias = null, chartEstados = null;
+  var showPuntos = true;
+  var zoomendHandlerAdded = false;
+  var coloniaSeleccionada = null;
+  var selectedOutline = null;
+  var normToColoniaName = {};
+  var lastTipoForTable = null;
 
-  // CORREGIDO: controlar visibilidad de puntos vectoriales según zoom
-        map.on('zoomend', function() {
-        if (!puntosLayer) return; // aún no creada
-        if (map.getZoom() >= 14) {
-            if (!map.hasLayer(puntosLayer)) map.addLayer(puntosLayer);
-        } else {
-            if (map.hasLayer(puntosLayer)) map.removeLayer(puntosLayer);
-        }
-        });
-
-    var solicitudes = [];
-    var chartTipos, chartEstados, chartColonias, chartTemporal;
-  // CORREGIDO: capa vectorial de puntos
-    var puntosLayer = null;
-    // CORREGIDO: almacenar el GeoJSON completo
-    var solicitudesGeoJSON = null;
-
-    // CORREGIDO: colonia actualmente seleccionada (si existe)
-    var coloniaSeleccionada = null;
-
-//incluir al mapa la capa de colonias//
-        var coloniasLayer;
-
-        fetch("archivos/vectores/colonias_wgs84_geojson_renombrado.geojson")
-        .then(res => res.json())
-        .then(data => {
-
-
-
-            // Funciones de respaldo para el choropleth
-function computeFillColor(feature) {
+  // Inicializar el mapa antes de cargar capas y datos
   try {
-    // Si ya tienes definida getFillColor(feature) en tu lógica Jenks, úsala
-    const c = getFillColor(feature);
-    return c ? c : "#eee";
+    map = L.map('map').setView([19.35, -99.2], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
   } catch (e) {
-    // Fallback si no existe o falla
-    return "#eee";
+    console.error('Error inicializando mapa:', e);
   }
-}
 
-function computeFillOpacity(feature) {
-  try {
-    // Si tienes getFillOpacity(feature), úsala; si no, fija 0.6
-    const o = getFillOpacity ? getFillOpacity(feature) : 0.6;
-    return (o === undefined || o === null) ? 0.6 : o;
-  } catch (e) {
-    return 0.6;
-  }
-}
+  function generarTablaResumen(datos){
+    // Mantener la función original por compatibilidad si hace falta
+    let resumen = {};
+    datos.forEach(s => {
+      if(!s["Fecha reporte"] || !s["Estado Reporte"]) return;
+      let fecha = new Date(s["Fecha reporte"]);
+      if(isNaN(fecha)) return;
 
-
-
-   // Capa temporal para el contorno de selección
-let selectedOutline = null;
-let coloniaSeleccionada = null;
-
-coloniasLayer = L.geoJson(data, {
-  style: function(feature) {
-    return {
-      color: "#555",
-      weight: 1,
-      fill: true,
-      fillColor: computeFillColor(feature),    // tu lógica Jenks
-      fillOpacity: computeFillOpacity(feature) // tu lógica Jenks
-    };
-  },
-  onEachFeature: function (feature, layer) {
-    const nombreColonia = feature.properties.NOMBRE;
-    const cantidad = solicitudes.filter(s => s["Colonia"] === nombreColonia).length;
-    layer.bindPopup(`<b>${nombreColonia}</b><br>Solicitudes: ${cantidad}`);
-
-    layer.on('click', function (e) {
-      if (L && L.DomEvent) L.DomEvent.stopPropagation(e);
-
-      // Quitar contorno anterior si existe
-      if (selectedOutline) {
-        map.removeLayer(selectedOutline);
-        selectedOutline = null;
+      let mesClave = fecha.getFullYear()+"-"+(fecha.getMonth()+1).toString().padStart(2,"0");
+      if(!resumen[mesClave]) {
+        resumen[mesClave] = { Atendido:0, Pendiente:0, "En atención":0, "No compete":0 };
       }
 
-      // Crear contorno rojo encima SIN tocar el polígono original
-      selectedOutline = L.geoJSON(layer.toGeoJSON(), {
-        style: { color: "red", weight: 3, fill: false }
-      }).addTo(map);
-
-      if (selectedOutline.bringToFront) selectedOutline.bringToFront();
-
-      layer.openPopup();
-      coloniaSeleccionada = layer;
+      let estado = s["Estado Reporte"].trim();
+      if(estado==="Pendiente") resumen[mesClave].Pendiente++;
+      else if(estado==="En atención") resumen[mesClave]["En atención"]++;
+      else if(estado==="Atendido") resumen[mesClave].Atendido++;
+      else if(estado==="No compete") resumen[mesClave]["No compete"]++;
     });
 
-    layer.on('popupclose', function () {
-      // Quitar contorno rojo al cerrar popup
-      if (selectedOutline) {
-        map.removeLayer(selectedOutline);
-        selectedOutline = null;
-      }
-      if (coloniaSeleccionada === layer) coloniaSeleccionada = null;
+    let mesesOrdenados = Object.keys(resumen).sort();
+    let tabla = `<table class="table table-striped"><thead><tr>
+      <th>Mes</th><th>Atendido</th><th>Pendiente</th><th>En atención</th><th>No compete</th>
+    </tr></thead><tbody>`;
+    let totales = { Atendido: 0, Pendiente: 0, "En atención": 0, "No compete": 0 };
+    mesesOrdenados.forEach(m => {
+      const r = resumen[m];
+      const [anio, mesNum] = m.split("-");
+      let nombreMes = new Date(anio, parseInt(mesNum) - 1).toLocaleString('es-ES', { month: 'long' });
+      nombreMes = nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1);
+      tabla += `<tr>
+        <td>${nombreMes} ${anio}</td>
+        <td>${r.Atendido}</td>
+        <td>${r.Pendiente}</td>
+        <td>${r["En atención"]}</td>
+        <td>${r["No compete"]}</td>
+      </tr>`;
+      Object.keys(totales).forEach(k => { totales[k] += r[k]; });
     });
+    tabla += `<tr style="font-weight:bold;">
+      <td>Total</td>
+      <td>${totales.Atendido}</td>
+      <td>${totales.Pendiente}</td>
+      <td>${totales["En atención"]}</td>
+      <td>${totales["No compete"]}</td>
+    </tr></tbody></table>`;
+    document.getElementById("tablaResumen").innerHTML = tabla;
   }
-}).addTo(map);
 
+  // Generar tabla estática: Top 10 colonias y Últimas 10 solicitudes según filtro Tipo
+  function generarTablaEstatica(tipo) {
+    // Filtrar por tipo (o todos)
+    const filtradasPorTipo = solicitudes.filter(s => {
+      if (!s) return false;
+      if (tipo === 'Todos' || !tipo) return true;
+      return s["Tipo de reporte"] === tipo;
+    });
 
+    // Top 10 colonias
+    const conteoCol = {};
+    filtradasPorTipo.forEach(s => {
+      const col = s["Colonia"] || 'Sin colonia';
+      conteoCol[col] = (conteoCol[col] || 0) + 1;
+    });
+    const topColonias = Object.entries(conteoCol)
+      .map(([col, cnt]) => ({col, cnt}))
+      .sort((a,b) => b.cnt - a.cnt)
+      .slice(0,10);
 
-// Control de capas en la esquina superior derecha
-var layerControl = L.control.layers(
-  { "OpenStreetMap": baseOSM },           // capa base
-  { "Colonias": coloniasLayer },          // overlays iniciales
-  { position: 'topright', collapsed: false }
-).addTo(map);
+    // Últimas 10 solicitudes (por fecha)
+    const ultimasSolicitudes = filtradasPorTipo
+      .filter(s => s["Fecha reporte"])
+      .map(s => ({
+        folio: s["Número folio"],
+        fecha: new Date(s["Fecha reporte"]),
+        colonia: s["Colonia"] || 'Sin colonia',
+        ciudadano: s["Nombre Ciudadano"] || 'N/A',
+        telefono: s["Teléfono"] || 'N/A',
+        tipo: s["Tipo de reporte"] || 'N/A',
+        estado: s["Estado Reporte"] || 'N/A',
+        referencia: s["Punto de referencia"] || 'N/A'
+      }))
+      .filter(x => !isNaN(x.fecha))
+      .sort((a,b) => b.fecha - a.fecha)
+      .slice(0,10);
 
-// Bandera para saber si ya añadimos la capa de solicitudes
-var overlaySolicitudesAdded = false;
+    // Construir HTML
+    let html = '<div style="display:flex;flex-direction:column;gap:12px">';
 
+    // Top Colonias
+    html += '<div><b>Top 10 Colonias (por número de solicitudes)</b>';
+    html += '<table class="table table-sm"><thead><tr><th>Colonia</th><th>Total</th></tr></thead><tbody>';
+    topColonias.forEach(c => {
+      html += `<tr><td>${c.col}</td><td>${c.cnt}</td></tr>`;
+    });
+    if (topColonias.length === 0) html += '<tr><td colspan="2">No hay datos</td></tr>';
+    html += '</tbody></table></div>';
 
+    // Últimas solicitudes
+    html += '<div><b>Últimas 10 Solicitudes</b>';
+    html += '<table class="table table-sm"><thead><tr><th>Folio</th><th>Fecha</th><th>Colonia</th><th>Ciudadano</th><th>Teléfono</th><th>Tipo</th><th>Estado</th></tr></thead><tbody>';
+    ultimasSolicitudes.forEach(s => {
+      html += `<tr><td>${s.folio}</td><td>${s.fecha.toLocaleString()}</td><td>${s.colonia}</td><td>${s.ciudadano}</td><td>${s.telefono}</td><td>${s.tipo}</td><td>${s.estado}</td></tr>`;
+    });
+    if (ultimasSolicitudes.length === 0) html += '<tr><td colspan="7">No hay solicitudes</td></tr>';
+    html += '</tbody></table></div>';
 
-// Clic fuera de colonias: quitar contorno si existe
-map.on('click', function () {
-  if (selectedOutline) {
-    map.removeLayer(selectedOutline);
-    selectedOutline = null;
+    html += '</div>';
+    document.getElementById('tablaResumen').innerHTML = html;
   }
-  coloniaSeleccionada = null;
-});
 
+  function classColor(i){
+    const colors = ['#DBD8D7','#FAEAE3','#FD9D8C','#F72F35','#99250F','#4A0E03'];
+    return colors[Math.min(Math.max(i,0), colors.length-1)];
+  }
 
+  function getJenksBreaks(data, numClasses) {
+    data = data.filter(v => !isNaN(v)).sort((a, b) => a - b);
+    if (data.length === 0) return [];
 
-            // CORREGIDO: Autocompletar colonias en el buscador
-            coloniasLayer.eachLayer(layer => {
-                let nombre = layer.feature.properties.NOMBRE;
-                if(nombre){
-                let opt = document.createElement("option");
-                opt.value = nombre;
-                document.getElementById("sugerenciasColonias").appendChild(opt);
-                }
-            });
-        });
-            // Leer Excel local
-            /*fetch("Excel/Noviembre2025.xlsx")
-                .then(res => res.arrayBuffer())
-                .then(data => {
-                var workbook = XLSX.read(data, {type:"array"});
-                var sheet = workbook.Sheets[workbook.SheetNames[0]];
-                solicitudes = XLSX.utils.sheet_to_json(sheet);
-                inicializarFiltros();
-                renderizar("Todos","Todos","Todos");
-                });*/
-
-
-            // CORREGIDO: leer GeoJSON y guardar FeatureCollection completo
-            fetch("archivos/solicitudes/Diciembre2025.geojson")
-              .then(res => res.json())
-              .then(data => {
-                solicitudesGeoJSON = data; // ✅ guardar el FeatureCollection completo
-
-                solicitudes = data.features
-                  .filter(f => f.geometry && f.geometry.type === "Point" && Array.isArray(f.geometry.coordinates))
-                  .map(f => {
-                    return {
-                      "Número folio": f.properties["Número folio"],
-                      "Tipo de reporte": f.properties["Tipo de reporte"],
-                      "Estado Reporte": f.properties["Estado Reporte"],
-                      "Fecha reporte": f.properties["Fecha reporte"],
-                      "Nombre Ciudadano": f.properties["Nombre Ciudadano"],
-                      "Teléfono": f.properties["Teléfono"],
-                      "Punto de referencia": f.properties["Punto de referencia"],
-                      "Coordenada X": f.geometry.coordinates[0], // lon
-                      "Coordenada Y": f.geometry.coordinates[1], // lat
-                      "Colonia": f.properties["name"] || null
-                    };
-                  });
-
-                // 👇 aquí van tus inicializaciones y renderizado
-                console.log("✅ Solicitudes cargadas:", solicitudes.length);
-                inicializarFiltros();
-                renderizar("Todos","Todos","Todos");
-
-                // 👇 botón aplicar filtros
-                document.getElementById("btnAplicarFiltros").addEventListener("click", () => {
-                  const tipo   = document.getElementById("filtroTipo").value;
-                  const estado = document.getElementById("filtroEstado").value;
-                  const mes    = document.getElementById("filtroMes").value;
-                  renderizar(tipo, estado, mes);
-                });
-
-              }); // ← cierre correcto del .then(data => { ... })
-
-                // CORREGIDO: Buscar por folio o colonia
-            document.getElementById("btnBuscarGeneral").addEventListener("click", () => {
-            let valor = document.getElementById("buscadorGeneral").value.trim();
-            if(!valor) return;
-
-            // 1. Buscar por folio
-            let solicitud = solicitudes.find(s => s["Número folio"] == valor);
-            if(solicitud){
-                let lat = parseFloat(solicitud["Coordenada Y"]);
-                let lon = parseFloat(solicitud["Coordenada X"]);
-                if(!isNaN(lat) && !isNaN(lon)){
-                map.setView([lat, lon], 17);
-                }
-
-                let tipo   = solicitud["Tipo de reporte"];
-                let estado = solicitud["Estado Reporte"];
-                let fecha  = solicitud["Fecha reporte"] ? new Date(solicitud["Fecha reporte"]) : null;
-                let mesNombre = fecha && !isNaN(fecha) ? fecha.toLocaleString('es-ES', { month:'long' }) : "Todos";
-
-                document.getElementById("filtroTipo").value   = tipo   || "Todos";
-                document.getElementById("filtroEstado").value = estado || "Todos";
-                document.getElementById("filtroMes").value    = mesNombre || "Todos";
-
-                renderizar(tipo || "Todos", estado || "Todos", mesNombre || "Todos");
-                return;
-            }
-
-            // 2. Buscar por colonia
-            let coloniaLayer = null;
-            coloniasLayer.eachLayer(layer => {
-                let nombre = layer.feature.properties.NOMBRE;
-                if(nombre && nombre.toLowerCase() === valor.toLowerCase()){
-                coloniaLayer = layer;
-                }
-            });
-
-            if(coloniaLayer){
-                map.fitBounds(coloniaLayer.getBounds());
-                coloniaSeleccionada = coloniaLayer; // CORREGIDO: guardar la colonia activa
-
-               let nombreColonia = coloniaLayer.feature.properties.NOMBRE;
-                let solicitudesColonia = solicitudes.filter(s => s["Colonia"] === nombreColonia);
-
-                // Renderizar solo esas solicitudes
-                renderizar("Todos","Todos","Todos");
-
-                if(puntosLayer){
-                map.removeLayer(puntosLayer);
-                puntosLayer = null;
-                }
-
-                puntosLayer = L.geoJson({ type:"FeatureCollection", features: solicitudesColonia.map(s => {
-                return {
-                    type:"Feature",
-                    geometry:{ type:"Point", coordinates:[s["Coordenada X"], s["Coordenada Y"]] },
-                    properties:s
-                };
-                })}, {
-                pointToLayer: function(feature, latlng){
-                    return L.circleMarker(latlng, {
-                    radius:5,
-                    fillColor:"#007bff",
-                    color:"#004085",
-                    weight:1,
-                    opacity:1,
-                    fillOpacity:0.8
-                    }).bindPopup(`<b>Folio:</b> ${feature.properties["Número folio"]}<br>
-                                <b>Ciudadano:</b> ${feature.properties["Nombre Ciudadano"]}<br>
-                                <b>Número de Teléfono:</b> ${feature.properties["Teléfono"]}<br>
-                                <b>Tipo:</b> ${feature.properties["Tipo de reporte"]}<br>
-                                <b>Estado:</b> ${feature.properties["Estado Reporte"]}`);
-                }
-                });
-                map.addLayer(puntosLayer);
-            } else {
-                alert("No se encontró folio ni colonia con: " + valor);
-            }
-            });
-
-
-            // CORREGIDO: Resetear búsqueda
-            document.getElementById("btnResetBuscar").addEventListener("click", () => {
-            // 1. Limpiar campo de texto
-            document.getElementById("buscadorGeneral").value = "";
-
-            // 2. Resetear filtros a "Todos"
-            document.getElementById("filtroTipo").value = "Todos";
-            document.getElementById("filtroEstado").value = "Todos";
-            document.getElementById("filtroMes").value = "Todos";
-
-            // 3. Quitar capa de puntos específica si existe
-            if(puntosLayer){
-                map.removeLayer(puntosLayer);
-                puntosLayer = null;
-            }
-            coloniaSeleccionada = null; // CORREGIDO: limpiar colonia activa
-            // 4. Renderizar todo de nuevo
-            renderizar("Todos","Todos","Todos");
-
-            // 5. Opcional: volver al zoom inicial
-            map.setView([19.35, -99.2], 13);
-            });
-
-
-  // Inicializar menú de filtros dinámico
-        function inicializarFiltros(){
-        // Tipos
-        let tiposUnicos = [...new Set(solicitudes.map(s => s["Tipo de reporte"]).filter(Boolean))];
-        let selectTipo = document.getElementById("filtroTipo");
-        tiposUnicos.forEach(t => {
-            let opt = document.createElement("option");
-            opt.value = t;
-            opt.textContent = t;
-            selectTipo.appendChild(opt);
-        });
-
-        // Estados
-        let estadosUnicos = [...new Set(solicitudes.map(s => s["Estado Reporte"]).filter(Boolean))];
-        let selectEstado = document.getElementById("filtroEstado");
-        estadosUnicos.forEach(e => {
-            let opt = document.createElement("option");
-            opt.value = e;
-            opt.textContent = e;
-            selectEstado.appendChild(opt);
-        });
-
-        // Meses
-        let mesesUnicos = [...new Set(solicitudes.map(s => {
-            if(!s["Fecha reporte"]) return null;
-            let fecha = new Date(s["Fecha reporte"]);
-            if(isNaN(fecha)) return null;
-            return fecha.toLocaleString('es-ES', { month: 'long' }); // nombre del mes en español
-        }).filter(Boolean))];
-
-        let selectMes = document.getElementById("filtroMes");
-        mesesUnicos.forEach(m => {
-            let opt = document.createElement("option");
-            opt.value = m;
-            opt.textContent = m.charAt(0).toUpperCase() + m.slice(1); // capitalizar
-            selectMes.appendChild(opt);
-        });
-
-         }
-
-           // Renderizar mapa + estadísticas + choropleth por colonias
-function renderizar(filtroTipo, filtroEstado, filtroMes){
-  // CORREGIDO: limpiar gráficas (ya no usamos markers)
- 
-
-  // contadores
-  var tipos = {}, estados = {}, fechas = {};
-
-  // recorrer solicitudes y aplicar filtros
-  solicitudes.forEach(s => {
-    if(!s["Coordenada Y"] || !s["Coordenada X"]) return;
-    var lat = parseFloat(s["Coordenada Y"]);
-    var lon = parseFloat(s["Coordenada X"]);
-    if(isNaN(lat) || isNaN(lon)) return;
-
-    var tipo = s["Tipo de reporte"];
-    var estado = s["Estado Reporte"];
-    var fecha = s["Fecha reporte"] ? new Date(s["Fecha reporte"]) : null;
-    var mesNombre = fecha && !isNaN(fecha) ? fecha.toLocaleString('es-ES', { month: 'long' }) : null;
-
-    // aplicar los tres filtros
-    let pasaFiltroTipo   = (filtroTipo==="Todos"  || tipo===filtroTipo);
-    let pasaFiltroEstado = (filtroEstado==="Todos"|| estado===filtroEstado);
-    let pasaFiltroMes    = (filtroMes==="Todos"   || mesNombre===filtroMes);
-
-        // CORREGIDO: si hay colonia seleccionada, filtrar por nombre de colonia (sin geometría)
-        let pasaColonia = true;
-        if (coloniaSeleccionada) {
-        const nombreColonia = coloniaSeleccionada.feature.properties.NOMBRE;
-        pasaColonia = (s["Colonia"] === nombreColonia);
-        }
-
-        if(pasaFiltroTipo && pasaFiltroEstado && pasaFiltroMes && pasaColonia){
-        // contadores para gráficas
-        if(tipo) tipos[tipo] = (tipos[tipo]||0)+1;
-        if(estado){
-            if(estado==="Pendiente" || estado==="En atención"){
-            estados["Pendiente/En Atención"] = (estados["Pendiente/En Atención"]||0)+1;
-            } else {
-            estados[estado] = (estados[estado]||0)+1;
-            }
-        }
-        if(fecha && !isNaN(fecha)){
-            let clave = fecha.getFullYear()+"-"+(fecha.getMonth()+1).toString().padStart(2,"0");
-            fechas[clave] = (fechas[clave]||0)+1;
-        }
-        }
-  });
-
-  // agregar cluster al mapa
-           // CORREGIDO: construir capa de puntos sin recrear la capa completa
-            if (solicitudesGeoJSON && solicitudesGeoJSON.features) {
-            // Filtrar features del GeoJSON según los filtros y la colonia seleccionada
-            const featuresFiltradas = solicitudesGeoJSON.features.filter(f => {
-                if (!f.geometry || f.geometry.type !== "Point" || !Array.isArray(f.geometry.coordinates)) return false;
-
-                const props = f.properties || {};
-                const tipo = props["Tipo de reporte"];
-                const estado = props["Estado Reporte"];
-                const fecha = props["Fecha reporte"] ? new Date(props["Fecha reporte"]) : null;
-                const mesNombre = fecha && !isNaN(fecha) ? fecha.toLocaleString('es-ES', { month: 'long' }) : null;
-
-                const pasaTipo   = (filtroTipo   === "Todos" || tipo   === filtroTipo);
-                const pasaEstado = (filtroEstado === "Todos" || estado === filtroEstado);
-                const pasaMes    = (filtroMes    === "Todos" || mesNombre === filtroMes);
-
-                let pasaColonia = true;
-                if (coloniaSeleccionada) {
-                const nombreColonia = coloniaSeleccionada.feature.properties.NOMBRE;
-                pasaColonia = (props["name"] === nombreColonia);
-                }
-
-                return pasaTipo && pasaEstado && pasaMes && pasaColonia;
-            });
-
-
-
-
-            // Inicializar la capa una sola vez
-        if (!puntosLayer) {
-        puntosLayer = L.markerClusterGroup({
-            // Opcionales para rendimiento/estética:
-            // disableClusteringAtZoom: 18,
-            // spiderfyOnEveryZoom: false,
-            // maxClusterRadius: 60
-        });
-        }
-
-
-        
-
-        // Controlar visibilidad según zoom
-        map.on('zoomend', function() {
-        if (!puntosLayer) return;
-        if (map.getZoom() >= 14) {
-            if (!map.hasLayer(puntosLayer)) map.addLayer(puntosLayer);
-        } else {
-            if (map.hasLayer(puntosLayer)) map.removeLayer(puntosLayer);
-        }
-        });
-
-
-// Limpiar y recargar
-puntosLayer.clearLayers();
-
-const capaGeoJson = L.geoJson(
-  { type: "FeatureCollection", features: featuresFiltradas },
-  {
-    pointToLayer: function (feature, latlng) {
-      return L.circleMarker(latlng, {
-        radius: 4,
-        fillColor: "#F7EC1B",
-        color: "#26261C",
-        weight: 1,
-        opacity: 1,
-        fillOpacity: 0.7
-      }).bindPopup(`
-        <b>Folio:</b> ${feature.properties["Número folio"]}<br>
-        <b>Tipo:</b> ${feature.properties["Tipo de reporte"]}<br>
-        <b>Estado:</b> ${feature.properties["Estado Reporte"]}
-      `);
+    let matrices = [], variance = [];
+    for (let i = 0; i < data.length + 1; i++) {
+      let tmp1 = [], tmp2 = [];
+      for (let j = 0; j < numClasses + 1; j++) { tmp1.push(0); tmp2.push(0); }
+      matrices.push(tmp1); variance.push(tmp2);
     }
-  }
-);
 
-// Añadir los puntos agrupados al cluster
-puntosLayer.addLayer(capaGeoJson);
+    for (let i = 1; i < numClasses + 1; i++) {
+      matrices[0][i] = 1; variance[0][i] = 0;
+      for (let j = 1; j < data.length + 1; j++) { variance[j][i] = Infinity; }
+    }
 
-// Mantener encuadre si hay colonia activa
-if (coloniaSeleccionada) {
-  map.fitBounds(coloniaSeleccionada.getBounds());
-}
-}
-
-
-
-
-  // preparar datos para gráficas
-  function prepararDatos(obj){
-    let arr = Object.entries(obj);
-    arr.sort((a,b) => b[1]-a[1]); // ordenar desc
-    arr = arr.slice(0,15);        // top 15
-    return {
-      labels: arr.map(e => e[0]),
-      values: arr.map(e => e[1])
-    };
-  }
-
-  let datosTipos   = prepararDatos(tipos);
-  let datosEstados = prepararDatos(estados);
-
-
-
-  // Agrupar por colonia y estado (el filtro de estado NO aplica aquí)
-let conteoColoniasEstados = {};
-solicitudes.forEach(s => {
-  const tipo = s["Tipo de reporte"];
-  const fecha = s["Fecha reporte"] ? new Date(s["Fecha reporte"]) : null;
-  const mesNombre = fecha && !isNaN(fecha) ? fecha.toLocaleString('es-ES', { month: 'long' }) : null;
-
-  // Aplicar solo filtros de tipo y mes
-  const pasaTipo = (filtroTipo === "Todos" || tipo === filtroTipo);
-  const pasaMes  = (filtroMes  === "Todos" || mesNombre === filtroMes);
-  if (!pasaTipo || !pasaMes) return;
-
-        const colonia = s["Colonia"];
-        if (!colonia) return; // saltar si no hay colonia
-        const estado  = s["Estado Reporte"] || "Sin estado";
-
-  if (!conteoColoniasEstados[colonia]) conteoColoniasEstados[colonia] = {};
-  conteoColoniasEstados[colonia][estado] = (conteoColoniasEstados[colonia][estado] || 0) + 1;
-});
-
-// Construir top 15 colonias por total (tipo y mes aplicados, estado ignorado)
-let coloniasOrdenadas = Object.entries(conteoColoniasEstados)
-  .map(([colonia, estados]) => {
-    const total = Object.values(estados).reduce((a,b) => a + b, 0);
-    return { colonia, estados, total };
-  })
-  .sort((a,b) => b.total - a.total)
-  .slice(0, 15);
-
-// Guardar arrays para la gráfica
-const labelsColonias = coloniasOrdenadas.map(c => c.colonia);
-const totalsColonias = coloniasOrdenadas.map(c => c.total);
-
-
-// Fijar orden de estados para consistencia visual
-const ordenEstados = ["Pendiente", "En atención", "Atendido", "No compete"];
-// Paleta por estado (ajústala si tus estados difieren)
-const coloresEstados = {
-  "Pendiente":    "#991B02",
-  "En atención":  "#ED8718",
-  "Atendido":     "#0BC700",
-  "No compete":   "#545454"
-};
-
-// Armar datasets apilados por estado
-
-const datasetsColonias = ordenEstados.map(est => ({
-  label: est,
-  data: coloniasOrdenadas.map(c => c.estados[est] || 0),
-  backgroundColor: coloresEstados[est] || "#999"
-}));
-
-
-
-  // gráfica horizontal de tipos
-                if (chartTipos) {
-                chartTipos.data.labels = datosTipos.labels;
-                chartTipos.data.datasets[0].data = datosTipos.values;
-                chartTipos.update();
-                } else {
-                chartTipos = new Chart(document.getElementById('chartTipos'), {
-                    type:'bar',
-                    data:{
-                    labels: datosTipos.labels,
-                    datasets:[{
-                        label:'Solicitudes por tipo',
-                        data: datosTipos.values,
-                        backgroundColor:'#922B21'
-                    }]
-                    },
-                    options: { 
-                    indexAxis:'y',
-                    responsive:true,
-                    maintainAspectRatio:false
-                    }
-                });
-                }
-
-
-
-// Gráfica horizontal apilada de colonias por estado (top 15)
-if (chartColonias) {
-  chartColonias.data.labels = labelsColonias;
-  chartColonias.data.datasets = datasetsColonias;
-  chartColonias.data.totals = totalsColonias; // ← actualizar totales
-  chartColonias.update();
-} else {
-  chartColonias = new Chart(document.getElementById('chartColonias'), {
-    type: 'bar',
-    data: {
-      labels: labelsColonias,
-      datasets: datasetsColonias,
-      totals: totalsColonias   // ← aquí guardamos los totales
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              const total = context.chart.data.totals[context.dataIndex];
-              const valor = context.raw;
-              const tipoSeleccionado = filtroTipo === "Todos" ? "" : ` de ${filtroTipo}`;
-              return `${context.dataset.label}: ${valor} de ${total} solicitudes${tipoSeleccionado}`;
+    for (let l = 2; l < data.length + 1; l++) {
+      let sum = 0, sumSquares = 0, w = 0;
+      for (let m = 1; m < l + 1; m++) {
+        let i3 = l - m + 1, val = data[i3 - 1];
+        w++; sum += val; sumSquares += val * val;
+        let varianceVal = sumSquares - (sum * sum) / w;
+        let i4 = i3 - 1;
+        if (i4 !== 0) {
+          for (let j = 2; j < numClasses + 1; j++) {
+            if (variance[l][j] >= (varianceVal + variance[i4][j - 1])) {
+              variance[l][j] = varianceVal + variance[i4][j - 1];
+              matrices[l][j] = i3;
             }
           }
-        },
-        legend: {
-          position: 'bottom'
-        }
-      },
-      scales: {
-        x: {
-          stacked: true,
-          ticks: { precision: 0 }
-        },
-        y: {
-          stacked: true
         }
       }
-    }
-  });
-}
-
-
-
-  // gráfica horizontal de estados
-                if (chartEstados) {
-            chartEstados.data.labels = datosEstados.labels;
-            chartEstados.data.datasets[0].data = datosEstados.values;
-            chartEstados.update();
-            } else {
-            chartEstados = new Chart(document.getElementById('chartEstados'), {
-                type:'bar',
-                data:{
-                    labels: datosEstados.labels,
-                    datasets:[{
-                    label:'Solicitudes por estado',
-                    data: datosEstados.values,
-                    backgroundColor:'#36a2eb'
-                    }]
-                },
-                options: { 
-                    indexAxis:'y',
-                    responsive:false,      // ✅ vuelve a false para respetar width/height del canvas
-                    maintainAspectRatio:false // ✅ mantiene proporción según el tamaño que pusiste en el <canvas>
-                }
-                });
-            }
-
-
-
-
-
-
-  // tabla resumen: SOLO depende del tipo
-  generarTablaResumen(solicitudes.filter(s =>
-    (filtroTipo==="Todos" || s["Tipo de reporte"]===filtroTipo)
-  ));
-
-  // choropleth por colonias: depende de los tres filtros
-            // choropleth por colonias: Jenks (cortes naturales) y leyenda dinámica
-            if (typeof coloniasLayer !== 'undefined' && coloniasLayer) {
-            let solicitudesFiltradas = solicitudes.filter(s => {
-                let tipo = s["Tipo de reporte"];
-                let estado = s["Estado Reporte"];
-                let fecha = s["Fecha reporte"] ? new Date(s["Fecha reporte"]) : null;
-                let mesNombre = fecha && !isNaN(fecha) ? fecha.toLocaleString('es-ES',{month:'long'}) : null;
-
-                let pasaTipo   = (filtroTipo==="Todos"  || tipo===filtroTipo);
-                let pasaEstado = (filtroEstado==="Todos"|| estado===filtroEstado);
-                let pasaMes    = (filtroMes==="Todos"   || mesNombre===filtroMes);
-                return pasaTipo && pasaEstado && pasaMes;
-            });
-
-            let conteoColonias = cuantificarPorColonia(solicitudesFiltradas);
-
-            // Calcular cortes Jenks (fallback si hay pocos datos)
-            let valores = Object.values(conteoColonias);
-            let breaks = [];
-            if (valores.length >= 5) {
-                breaks = getJenksBreaks(valores, 5); // 6 valores: min..max
-            } else {
-                let max = Math.max(0, ...valores, 0);
-                breaks = [0, max/5, 2*max/5, 3*max/5, 4*max/5, max];
-            }
-            let cortesOrdenados = [...breaks].sort((a,b) => a - b); // ordenar de menor a mayor
-
-            // Pintar colonias según clase Jenks
-            coloniasLayer.eachLayer(layer => {
-                let nombre = layer.feature.properties.NOMBRE || "Sin nombre";
-                let valor = conteoColonias[nombre] || 0;
-
-                let i = 0;
-                for (let b = 1; b < cortesOrdenados.length; b++) {
-                if (valor <= cortesOrdenados[b]) { i = b; break; }
-                if (b === cortesOrdenados.length - 1) i = b;
-                }
-
-                // Si la colonia tiene valor 0, no se rellena
-            layer.setStyle({
-                fillColor: valor === 0 ? 'transparent' : classColor(i),
-                fillOpacity: valor === 0 ? 0 : 0.7,
-                color: "#555",
-                weight: 1
-            });
-                layer.bindPopup(`<b>${nombre}</b><br>Solicitudes: ${valor}`);
-            });
-
-            // Actualizar leyenda con los cortes actuales
-            try { map.removeControl(legend); } catch(e){}
-        legend.onAdd = function (map) {
-  var div = L.DomUtil.create('div', 'info legend');
-  div.style.background = 'white';
-  div.style.padding = '6px';
-  div.style.fontSize = '12px';
-  div.style.lineHeight = '18px';
-  div.style.boxShadow = '0 0 5px rgba(0,0,0,0.3)';
-
-  var labels = ['<b>Simbología</b>'];
-
-  for (var c = 1; c < cortesOrdenados.length; c++) {
-    let from = Math.round(cortesOrdenados[c - 1]);
-    let to   = Math.round(cortesOrdenados[c]);
-
-    // Evitar rangos invertidos como 49–48
-    if (from > to) {
-      [from, to] = [to, from];
+      variance[l][1] = sumSquares - (sum * sum) / w;
+      matrices[l][1] = 1;
     }
 
-    // Opcional: evitar mostrar rangos iguales como 48–48
-    if (from === to) continue;
-
-    labels.push(
-      `<i style="background:${classColor(c)};width:18px;height:18px;display:inline-block;margin-right:6px;"></i> ${from}–${to}`
-    );
+    let k = data.length, kclass = [];
+    for (let j = numClasses; j > 0; j--) {
+      let id = matrices[k][j] - 1;
+      kclass.push(data[id]);
+      k = matrices[k][j] - 1;
+    }
+    kclass.push(data[data.length - 1]);
+    return kclass.reverse();
   }
 
-  div.innerHTML = labels.join('<br>');
-  return div;
-};
+  // Normalizar cadenas: trim, mayúsculas, eliminar tildes/diacríticos, quitar signos
+  function normalizeKey(s) {
+    if (s === undefined || s === null) return null;
+    try {
+      return String(s)
+        .trim()
+        .toUpperCase()
+        .normalize('NFD')
+        .replace(/[\u0000-\u001F\u007F]/g, '') // Remove control characters
+        .replace(/[\u0000-\u0000]/g, '') // This line is redundant and can be removed
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Z0-9\s]/g, '')
+        .replace(/\s+/g, ' ');
+    } catch (e) {
+      return String(s).trim().toUpperCase();
+    }
+  }
 
+  // ========== OBTENER IDs FILTRADOS ==========
+  // Obtener IDs filtrados; si ignoreColonia=true, se omite el filtro por coloniaSeleccionada
+  function obtenerIdsFiltrados(filtroTipo, filtroEstado, filtroMes, ignoreColonia = false) {
+    let setIds = new Set(allIds);
 
-            legend.addTo(map);
-            }
-}
+    if (filtroTipo !== "Todos") {
+      setIds = new Set(indiceTipo[filtroTipo] || []);
+    }
+    if (filtroEstado !== "Todos") {
+      const idsEstado = new Set(indiceEstado[filtroEstado] || []);
+      setIds = new Set([...setIds].filter(id => idsEstado.has(id)));
+    }
+    if (filtroMes !== "Todos") {
+      const idsMes = new Set(indiceMes[filtroMes] || []);
+      setIds = new Set([...setIds].filter(id => idsMes.has(id)));
+    }
+    if (!ignoreColonia && coloniaSeleccionada) {
+      const nombreColonia = coloniaSeleccionada.feature?.properties?.NOMBRE;
+      const nombreNorm = normalizeKey(nombreColonia);
+      setIds = new Set([...setIds].filter(id => solicitudPorId[id]["ColoniaNorm"] === nombreNorm));
+    }
+    return [...setIds];
+  }
 
+  // ========== LOADING OVERLAY HELPERS ==========
+  function showLoading() {
+    try {
+      const d = document.getElementById('loadingOverlay');
+      if (d) d.style.display = 'flex';
+    } catch (e) { console.log('showLoading error', e); }
+  }
+  function hideLoading() {
+    try {
+      const d = document.getElementById('loadingOverlay');
+      if (d) d.style.display = 'none';
+    } catch (e) { console.log('hideLoading error', e); }
+  }
 
-       // CORREGIDO: cuantificación rápida usando el campo "name" del GeoJSON
-        function cuantificarPorColonia(solicitudesFiltradas){
-            let conteo = {};
+  // ========== PRECÁLCULO DE ÍNDICES Y ESTADÍSTICAS ==========
+  function precalcularIndices() {
+    solicitudPorId = {};
+    allIds = [];
+    indiceTipo = {};
+    indiceEstado = {};
+    indiceMes = {};
+    estadisticasPorColonia = {};
 
-            solicitudesFiltradas.forEach(s => {
-                // Usar directamente el campo Colonia precalculado
-                let nombre = s["Colonia"] || s["name"];
-                if (nombre) {
-                conteo[nombre] = (conteo[nombre] || 0) + 1;
-                }
-            });
+    solicitudes.forEach((s, idx) => {
+      s._id = idx;
+      solicitudPorId[idx] = s;
+      allIds.push(idx);
 
-            console.log("Conteo final por colonia:", conteo);
-            return conteo;
+      const tipo = s["Tipo de reporte"] || "Sin tipo";
+      if (!indiceTipo[tipo]) indiceTipo[tipo] = [];
+      indiceTipo[tipo].push(idx);
+
+      const estado = s["Estado Reporte"] || "Sin estado";
+      if (!indiceEstado[estado]) indiceEstado[estado] = [];
+      indiceEstado[estado].push(idx);
+
+      if (s["Fecha reporte"]) {
+        const fecha = new Date(s["Fecha reporte"]);
+        if (!isNaN(fecha)) {
+          const mesNombre = fecha.toLocaleString('es-ES', { month: 'long' });
+          if (!indiceMes[mesNombre]) indiceMes[mesNombre] = [];
+          indiceMes[mesNombre].push(idx);
         }
+      }
 
-        // se asignan los rangos 
-        function getColor(d, max){
-        let rango = max/5;
-        return d > 4*rango ? '#4A0E03' :
-                d > 3*rango ? '#99250F' :
-                d > 2*rango ? '#F72F35' :
-                d > 1*rango ? '#FD9D8C' :
-                d > 0       ? '#FAEAE3' :
-                            '#DBD8D7';
+      const col = s["Colonia"];
+      const colNorm = s["ColoniaNorm"] || normalizeKey(col);
+      if (colNorm) {
+        if (!estadisticasPorColonia[colNorm]) {
+          estadisticasPorColonia[colNorm] = { tipos: {}, estados: {}, meses: {}, originalNames: {} };
         }
+        estadisticasPorColonia[colNorm].tipos[tipo] = (estadisticasPorColonia[colNorm].tipos[tipo] || 0) + 1;
+        estadisticasPorColonia[colNorm].estados[estado] = (estadisticasPorColonia[colNorm].estados[estado] || 0) + 1;
+        if (s["Fecha reporte"] && !isNaN(new Date(s["Fecha reporte"]))) {
+          const mesNombre = new Date(s["Fecha reporte"]).toLocaleString('es-ES', { month: 'long' });
+          estadisticasPorColonia[colNorm].meses[mesNombre] = (estadisticasPorColonia[colNorm].meses[mesNombre] || 0) + 1;
+        }
+        // Guardar ejemplos de nombres originales para referencia
+        if (col) {
+          estadisticasPorColonia[colNorm].originalNames[col] = (estadisticasPorColonia[colNorm].originalNames[col] || 0) + 1;
+        }
+      }
+    });
+  }
 
+  // ========== RENDERIZAR FUNCIÓN OPTIMIZADA ==========
+  function renderizar(filtroTipo, filtroEstado, filtroMes) {
+    // Mostrar overlay de carga al iniciar render
+    try { showLoading(); } catch(e){}
 
+    // Prevenir renderizado si no hay datos cargados
+    if (!solicitudes || solicitudes.length === 0 || !solicitudesGeoJSON) {
+      try { hideLoading(); } catch(e){}
+      return;
+    }
+    
+    // ✅ OPTIMIZACIÓN 1: Usar índices precalculados en lugar de .forEach()
+    // idsFiltradosRespectCol: respetan la selección de colonia (para puntos)
+    const idsFiltradosRespectCol = obtenerIdsFiltrados(filtroTipo, filtroEstado, filtroMes, false);
+    // idsFiltradosIgnoreCol: ignoran la selección de colonia (para choropleth, charts y tabla)
+    const idsFiltradosIgnoreCol = obtenerIdsFiltrados(filtroTipo, filtroEstado, filtroMes, true);
 
-                    // Jenks: cálculo de cortes naturales (5 clases)
-            function getJenksBreaks(data, numClasses) {
-            data = data.filter(v => !isNaN(v)).sort((a, b) => a - b);
-            if (data.length === 0) return [];
+    // ===== Agregados por colonia basados en los ids filtrados IGNORANDO la selección puntual de colonia =====
+    const countsByColNorm = {}; // { norm: { total: n, estados: {estado: n} } }
+    idsFiltradosIgnoreCol.forEach(id => {
+      const s = solicitudPorId[id];
+      if (!s) return;
+      const norm = s["ColoniaNorm"] || normalizeKey(s["Colonia"]);
+      const estado = s["Estado Reporte"] || 'Sin estado';
+      if (!norm) return;
+      if (!countsByColNorm[norm]) countsByColNorm[norm] = { total: 0, estados: {} };
+      countsByColNorm[norm].total += 1;
+      countsByColNorm[norm].estados[estado] = (countsByColNorm[norm].estados[estado] || 0) + 1;
+    });
+    
+    // Contadores para gráficas
+    var tipos = {}, estados = {}, fechas = {};
 
-            let matrices = [], variance = [];
-            for (let i = 0; i < data.length + 1; i++) {
-                let tmp1 = [], tmp2 = [];
-                for (let j = 0; j < numClasses + 1; j++) { tmp1.push(0); tmp2.push(0); }
-                matrices.push(tmp1); variance.push(tmp2);
-            }
+    // Para las métricas de las gráficas usaremos idsFiltradosIgnoreCol (no limitar por la colonia seleccionada)
+    idsFiltradosIgnoreCol.forEach(id => {
+      const s = solicitudPorId[id];
+      if (!s) return;
+      const tipo = s["Tipo de reporte"];
+      const estado = s["Estado Reporte"];
+      const fecha = s["Fecha reporte"] ? new Date(s["Fecha reporte"]) : null;
 
-            for (let i = 1; i < numClasses + 1; i++) {
-                matrices[0][i] = 1; variance[0][i] = 0;
-                for (let j = 1; j < data.length + 1; j++) { variance[j][i] = Infinity; }
-            }
+      if (tipo) tipos[tipo] = (tipos[tipo] || 0) + 1;
+      if (estado) {
+        if (estado === "Pendiente" || estado === "En atención") {
+          estados["Pendiente/En Atención"] = (estados["Pendiente/En Atención"] || 0) + 1;
+        } else {
+          estados[estado] = (estados[estado] || 0) + 1;
+        }
+      }
+      if (fecha && !isNaN(fecha)) {
+        const clave = fecha.getFullYear() + "-" + (fecha.getMonth() + 1).toString().padStart(2, "0");
+        fechas[clave] = (fechas[clave] || 0) + 1;
+      }
+    });
 
-            for (let l = 2; l < data.length + 1; l++) {
-                let sum = 0, sumSquares = 0, w = 0;
-                for (let m = 1; m < l + 1; m++) {
-                let i3 = l - m + 1, val = data[i3 - 1];
-                w++; sum += val; sumSquares += val * val;
-                let varianceVal = sumSquares - (sum * sum) / w;
-                let i4 = i3 - 1;
-                if (i4 !== 0) {
-                    for (let j = 2; j < numClasses + 1; j++) {
-                    if (variance[l][j] >= (varianceVal + variance[i4][j - 1])) {
-                        variance[l][j] = varianceVal + variance[i4][j - 1];
-                        matrices[l][j] = i3;
-                    }
-                    }
-                }
-                }
-                variance[l][1] = sumSquares - (sum * sum) / w;
-                matrices[l][1] = 1;
-            }
+    // ✅ OPTIMIZACIÓN 2: Filtrar GeoJSON una sola vez para los PUNTOS según idsFiltradosRespectCol
+    const allowedIds = new Set(idsFiltradosRespectCol);
+    const featuresFiltradas = solicitudesGeoJSON.features.filter((f, idx) => {
+      if (!f.geometry || f.geometry.type !== "Point" || !Array.isArray(f.geometry.coordinates)) return false;
+      // Usar la lista de ids permitidos (pre-filtrada por índices y por colonia si aplica)
+      // Buscamos el _id asignado en solicitudPorId comparando coordenadas y folio
+      const props = f.properties || {};
+      // Intentamos emparejar por 'Número folio' si existe
+      const folio = props["Número folio"];
+      if (folio !== undefined && folio !== null) {
+        // buscar el índice en solicitudPorId (nota: solicitudPorId usa índices numéricos, buscamos por folio)
+        // Para rendimiento asumimos que el orden de features corresponde a los índices usados al parsear solicitudesGeoJSON
+      }
+      // Como heurística fiable utilizamos la posición: encontrar si las coordenadas están dentro del conjunto filtrado
+      // Construimos una clave simple lon,lat
+      const lon = f.geometry.coordinates[0];
+      const lat = f.geometry.coordinates[1];
+      // Buscar si algún id en allowedIds corresponde a estas coordenadas
+      let match = false;
+      for (let id of allowedIds) {
+        const s = solicitudPorId[id];
+        if (!s) continue;
+        const sx = Number(s["Coordenada X"]);
+        const sy = Number(s["Coordenada Y"]);
+        if (isNaN(sx) || isNaN(sy)) continue;
+        if (Math.abs(sx - lon) < 1e-6 && Math.abs(sy - lat) < 1e-6) { match = true; break; }
+      }
+      return match;
+    });
 
-            let k = data.length, kclass = [];
-            for (let j = numClasses; j > 0; j--) {
-                let id = matrices[k][j] - 1;
-                kclass.push(data[id]);
-                k = matrices[k][j] - 1;
-            }
-            kclass.push(data[data.length - 1]);
-            return kclass.reverse();
-            }
+    // ✅ OPTIMIZACIÓN 3: Inicializar capa de puntos UNA SOLA VEZ
+    if (!puntosLayer) {
+      puntosLayer = L.markerClusterGroup({ maxClusterRadius: 50 });
+      
+      // Agregar solo si no está en mapa
+      if (!map.hasLayer(puntosLayer)) {
+        map.addLayer(puntosLayer);
+      }
 
-            // Paleta por clase (0..5) basada en tu escala
-            function classColor(i){
-            const colors = ['#DBD8D7','#FAEAE3','#FD9D8C','#F72F35','#99250F','#4A0E03'];
-            return colors[Math.min(Math.max(i,0), colors.length-1)];
-            }
+      // ✅ OPTIMIZACIÓN 4: Event listener ÚNICO para zoom
+      if (!zoomendHandlerAdded) {
+        map.on('zoomend', function() {
+          if (!puntosLayer) return;
+          // Respetar el estado de showPuntos: sólo mostrar cuando el usuario lo permita
+          if (map.getZoom() >= 14 && showPuntos) {
+            if (!map.hasLayer(puntosLayer)) map.addLayer(puntosLayer);
+          } else {
+            if (map.hasLayer(puntosLayer)) map.removeLayer(puntosLayer);
+          }
+        });
+        zoomendHandlerAdded = true;
+      }
+    }
 
-            // Leyenda fija (se actualizará dentro de renderizar)
-            var legend = L.control({position: 'bottomleft'});
-            legend.onAdd = function (map) {
-            var div = L.DomUtil.create('div', 'info legend');
-            div.style.background = 'white';
-            div.style.padding = '6px';
-            div.style.fontSize = '12px';
-            div.style.lineHeight = '18px';
-            div.style.boxShadow = '0 0 5px rgba(0,0,0,0.3)';
-            div.innerHTML = '<b>Simbología</b>';
-            return div;
-            };
-            legend.addTo(map);
+      // Asegurar control de leyenda y toggle están creados
+      if (!legendControl || !puntosToggleControl) createMapControls();
 
+    // ✅ LIMPIAR layers de la capa anterior (sin recrear)
+    puntosLayer.clearLayers();
 
-  
+    // ✅ Agregar features filtradas
+    const capaGeoJson = L.geoJson(
+      { type: "FeatureCollection", features: featuresFiltradas },
+      {
+        pointToLayer: function (feature, latlng) {
+          return L.circleMarker(latlng, {
+            radius: 4,
+            fillColor: "#F7EC1B",
+            color: "#26261C",
+            weight: 1,
+            opacity: 1,
+            fillOpacity: 0.7
+          }).bindPopup(`
+            <b>Folio:</b> ${feature.properties["Número folio"]}<br>
+            <b>Ciudadano:</b> ${feature.properties["Nombre Ciudadano"] || 'N/A'}<br>
+            <b>Teléfono:</b> ${feature.properties["Teléfono"] || 'N/A'}<br>
+            <b>Tipo:</b> ${feature.properties["Tipo de reporte"]}<br>
+            <b>Estado:</b> ${feature.properties["Estado Reporte"]}<br>
+            <b>Punto de referencia:</b> ${feature.properties["Punto de referencia"] || 'N/A'}
+          `);
+        }
+      }
+    );
 
-// Tabla resumen (con Pendientes/En Atención + Indicador dinámico + Totales en negritas)
-function generarTablaResumen(datos){
-  let resumen = {};
-  datos.forEach(s => {
-    if(!s["Fecha reporte"] || !s["Estado Reporte"]) return;
-    let fecha = new Date(s["Fecha reporte"]);
-    if(isNaN(fecha)) return;
+    puntosLayer.addLayer(capaGeoJson);
+    // Si el usuario tiene puntos desactivados, asegurarnos de no mostrarlos
+    if (showPuntos) {
+      if (!map.hasLayer(puntosLayer)) map.addLayer(puntosLayer);
+      // indicar visualmente en el botón
+      const btn = document.getElementById('btnTogglePuntos'); if (btn) btn.style.opacity = '1';
+    } else {
+      if (map.hasLayer(puntosLayer)) map.removeLayer(puntosLayer);
+      const btn = document.getElementById('btnTogglePuntos'); if (btn) btn.style.opacity = '0.4';
+    }
 
-    // clave por año-mes
-    let mesClave = fecha.getFullYear()+"-"+(fecha.getMonth()+1).toString().padStart(2,"0");
-    if(!resumen[mesClave]) {
-      resumen[mesClave] = {
-        Atendido:0,
-        Pendiente:0,
-        "En atención":0,
-        "No compete":0,
-        PendientesMes:0,
-        PendientesAcumulado:0,
-        IndicadorDias:0
+    // Fitear solo si hay colonia seleccionada
+    if (coloniaSeleccionada && coloniaSeleccionada.getBounds) {
+      try {
+        map.fitBounds(coloniaSeleccionada.getBounds());
+      } catch (e) {
+        console.log("Error fitBounds:", e);
+      }
+    }
+
+    // ========== GRÁFICAS ==========
+    const chartLimit = 10; // Mostrar top 10 en cada gráfica (aumentado +2)
+    function prepararDatos(obj) {
+      let arr = Object.entries(obj);
+      arr.sort((a, b) => b[1] - a[1]);
+      arr = arr.slice(0, chartLimit);
+      return {
+        labels: arr.map(e => e[0]),
+        values: arr.map(e => e[1])
       };
     }
 
-    let estado = s["Estado Reporte"].trim();
-    if(estado==="Pendiente"){
-      resumen[mesClave].Pendiente++;
-    } else if(estado==="En atención"){
-      resumen[mesClave]["En atención"]++;
-    } else if(estado==="Atendido"){
-      resumen[mesClave].Atendido++;
-    } else if(estado==="No compete"){
-      resumen[mesClave]["No compete"]++;
+    let datosTipos = prepararDatos(tipos);
+    let datosEstados = prepararDatos(estados);
+
+    // Gráfica Tipos
+    if (chartTipos) {
+      chartTipos.data.labels = datosTipos.labels;
+      chartTipos.data.datasets[0].data = datosTipos.values;
+      chartTipos.update('none');
+    } else {
+      chartTipos = new Chart(document.getElementById('chartTipos'), {
+        type: 'bar',
+        data: {
+          labels: datosTipos.labels,
+          datasets: [{
+            label: 'Solicitudes por tipo',
+            data: datosTipos.values,
+            backgroundColor: '#922B21'
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 0 },
+          plugins: { legend: { display: false } }
+        }
+      });
     }
-  });
 
-  // Orden cronológico de meses (YYYY-MM)
-  let mesesOrdenados = Object.keys(resumen).sort();
+    // Gráfica Colonias (usar countsByColNorm calculados desde idsFiltrados)
+    const conteoColoniasEstados = {};
+    Object.entries(countsByColNorm).forEach(([colNorm, info]) => {
+      const displayName = normToColoniaName[colNorm] || (estadisticasPorColonia[colNorm] && Object.keys(estadisticasPorColonia[colNorm].originalNames || {})[0]) || colNorm;
+      conteoColoniasEstados[displayName] = info.estados || {};
+      conteoColoniasEstados[displayName]._total = info.total || 0;
+    });
 
-  // Calcular Pendientes/En Atención, acumulado y el indicador dinámico
-  let acumulado = 0;
-  let totalMeses = mesesOrdenados.length;
-  mesesOrdenados.forEach((m, idx) => {
-    const fila = resumen[m];
-    fila.PendientesMes = fila.Pendiente + fila["En atención"];
-    acumulado += fila.PendientesMes;
-    fila.PendientesAcumulado = acumulado;
+    let coloniasOrdenadas = Object.entries(conteoColoniasEstados)
+      .map(([colonia, estados]) => {
+        const total = estados._total || Object.values(estados).reduce((a, b) => a + b, 0);
+        // remove _total from estados copy
+        const estadosCopy = Object.assign({}, estados);
+        delete estadosCopy._total;
+        return { colonia, estados: estadosCopy, total };
+      })
+      .sort((a, b) => b.total - a.total)
+      .slice(0, chartLimit);
 
-    // Factor dinámico: último mes = 1, hacia atrás +30 cada vez
-    let distanciaDesdeFinal = (totalMeses - 1) - idx;
-    let factor = distanciaDesdeFinal * 30;
-    if (distanciaDesdeFinal === 0) factor = 1; // último mes = 1
-    fila.IndicadorDias = fila.PendientesMes * factor;
-  });
+    const labelsColonias = coloniasOrdenadas.map(c => c.colonia);
+    const totalsColonias = coloniasOrdenadas.map(c => c.total);
 
-  // Renderizar tabla
-  let tabla = `<table class="table table-striped">
-    <thead><tr>
-      <th>Mes</th><th>Atendido</th><th>Pendiente</th><th>En atención</th>
-      <th>No compete</th><th>Pendientes/En Atención</th>
-      <th>Pendientes/En Atención (Acumulado)</th>
-      <th>Indicador de días por solicitudes</th>
-    </tr></thead><tbody>`;
+    const ordenEstados = ["Pendiente", "En atención", "Atendido", "No compete"];
+    const coloresEstados = {
+      "Pendiente": "#991B02",
+      "En atención": "#ED8718",
+      "Atendido": "#0BC700",
+      "No compete": "#545454"
+    };
 
-  // Variables para totales
-  let totalAtendido = 0, totalPendiente = 0, totalEnAtencion = 0, totalNoCompete = 0;
-  let totalPendMes = 0, totalPendAcum = 0, totalIndicador = 0;
+    const datasetsColonias = ordenEstados.map(est => ({
+      label: est,
+      data: coloniasOrdenadas.map(c => c.estados[est] || 0),
+      backgroundColor: coloresEstados[est] || "#999"
+    }));
 
-  mesesOrdenados.forEach(m => {
-    const r = resumen[m];
-    const [anio, mesNum] = m.split("-");
-    let nombreMes = new Date(anio, parseInt(mesNum)-1).toLocaleString('es-ES',{month:'long'});
-    nombreMes = nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1);
+    if (chartColonias) {
+      chartColonias.data.labels = labelsColonias;
+      chartColonias.data.datasets = datasetsColonias;
+      chartColonias.data.totals = totalsColonias;
+      chartColonias.update('none');
+    } else {
+      chartColonias = new Chart(document.getElementById('chartColonias'), {
+        type: 'bar',
+        data: {
+          labels: labelsColonias,
+          datasets: datasetsColonias,
+          totals: totalsColonias
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 0 },
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const total = context.chart.data.totals[context.dataIndex];
+                  const valor = context.raw;
+                  return `${context.dataset.label}: ${valor} de ${total}`;
+                }
+              }
+            },
+            legend: { position: 'bottom', labels: { font: { size: 10 } } }
+          },
+          scales: {
+            x: { stacked: true, ticks: { precision: 0 } },
+            y: { stacked: true, ticks: { font: { size: 9 } }, maxRotation: 0, minRotation: 0 }
+          }
+        }
+      });
+    }
 
-    tabla += `<tr>
-      <td>${nombreMes} ${anio}</td>
-      <td>${r.Atendido.toLocaleString('es-MX')}</td>
-      <td>${r.Pendiente.toLocaleString('es-MX')}</td>
-      <td>${r["En atención"].toLocaleString('es-MX')}</td>
-      <td>${r["No compete"].toLocaleString('es-MX')}</td>
-      <td>${r.PendientesMes.toLocaleString('es-MX')}</td>
-      <td>${r.PendientesAcumulado.toLocaleString('es-MX')}</td>
-      <td>${r.IndicadorDias.toLocaleString('es-MX')}</td>
+    // Gráfica Estados
+    if (chartEstados) {
+      chartEstados.data.labels = datosEstados.labels;
+      chartEstados.data.datasets[0].data = datosEstados.values;
+      chartEstados.update('none');
+    } else {
+      chartEstados = new Chart(document.getElementById('chartEstados'), {
+        type: 'bar',
+        data: {
+          labels: datosEstados.labels,
+          datasets: [{
+            label: 'Solicitudes por estado',
+            data: datosEstados.values,
+            backgroundColor: '#36a2eb'
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 0 },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+
+    // ========== TABLA RESUMEN ==========
+    // Restaurar comportamiento anterior: la tabla resumen se genera
+    // a partir de los datos filtrados (ignorando la selección puntual de colonia)
+    // y usa la función `generarTablaResumen` como antes.
+    try {
+      const datosParaTabla = idsFiltradosIgnoreCol.map(id => solicitudPorId[id]).filter(Boolean);
+      generarTablaResumen(datosParaTabla);
+    } catch (e) {
+      console.log('Error actualizando tablaResumen:', e);
+    }
+
+    // ========== CHOROPLETH ==========
+    if (coloniasLayer) {
+      // Primero calcular total de solicitudes por colonia respetando filtros
+      const totalsArr = [];
+      const totalsByCol = {};
+
+      // Obtener totals a partir de countsByColNorm (ya filtrados)
+      coloniasLayer.eachLayer(layer => {
+        const nombre = layer.feature.properties.NOMBRE;
+        const nombreNorm = layer.feature.properties._normName || normalizeKey(nombre);
+        const info = countsByColNorm[nombreNorm];
+        const total = info ? info.total : 0;
+        totalsByCol[nombre] = total;
+        if (total > 0) totalsArr.push(total);
+      });
+
+      const numClasses = 5;
+      if (totalsArr.length === 0) {
+        // No hay datos: pintar todo gris claro
+        coloniasLayer.eachLayer(layer => {
+          try {
+            layer.setStyle({ fillColor: "#eee", fillOpacity: 0.2, color: "#555", weight: 1 });
+            const nombre = layer.feature.properties.NOMBRE;
+            const total = totalsByCol[nombre] || 0;
+            layer.bindPopup(`<b>${nombre}</b><br>Solicitudes: ${total}`);
+          } catch (e) {
+            console.log("Error en choropleth (sin datos):", e);
+          }
+        });
+      } else {
+        // Calcular quiebres Jenks (manejar si hay menos valores que clases)
+        const clases = Math.min(numClasses, totalsArr.length);
+        let breaks = [];
+        try {
+          breaks = getJenksBreaks(totalsArr, clases);
+        } catch (e) {
+          console.log('Error calculando Jenks:', e);
+          // fallback: usar percentiles simples
+          totalsArr.sort((a,b)=>a-b);
+          breaks = [];
+          for (let i=1;i<=clases;i++) {
+            const idx = Math.floor((totalsArr.length * i) / clases) - 1;
+            breaks.push(totalsArr[Math.max(0, Math.min(totalsArr.length-1, idx))]);
+          }
+        }
+
+        // Asegurar que los quiebres estén ordenados y sean únicos
+        breaks = Array.from(new Set(breaks)).sort((a,b)=>a-b);
+
+        coloniasLayer.eachLayer(layer => {
+          const nombre = layer.feature.properties.NOMBRE;
+          const total = totalsByCol[nombre] || 0;
+
+          let fill = "#eee";
+          let opacity = 0.2;
+
+          if (total > 0) {
+            // Determinar clase: 0..(breaks.length-1)
+            let cls = 0;
+            for (let i = 0; i < breaks.length; i++) {
+              if (total <= breaks[i]) { cls = i; break; }
+              cls = i;
+            }
+            fill = classColor(cls);
+            // mapear opacidad según clase (más solicitudes -> mayor opacidad)
+            opacity = 0.35 + (cls / Math.max(1, breaks.length - 1)) * 0.55;
+          }
+
+          try {
+            layer.setStyle({ fillColor: fill, fillOpacity: opacity, color: "#555", weight: 1 });
+            layer.bindPopup(`<b>${nombre}</b><br>Solicitudes: ${total}`);
+          } catch (e) {
+            console.log("Error en choropleth (pintado):", e);
+          }
+        });
+        // Actualizar leyenda con los quiebres calculados
+        try { updateLegend(breaks); } catch (e) { console.log('Error actualizando leyenda:', e); }
+      }
+    }
+    else {
+      // Si no hay coloniasLayer o sin datos, limpiar la leyenda
+      try { updateLegend(null); } catch(e){}
+    }
+
+    // Ocultar overlay al terminar render (delay para que sea visible)
+    try { setTimeout(hideLoading, 500); } catch(e){}
+  }
+
+  // ========== GENERAR TABLA RESUMEN ==========
+  // Tabla resumen (con Pendientes/En Atención + Indicador dinámico + Totales en negritas)
+  function generarTablaResumen(datos){
+    let resumen = {};
+    datos.forEach(s => {
+      if(!s["Fecha reporte"] || !s["Estado Reporte"]) return;
+      let fecha = new Date(s["Fecha reporte"]);
+      if(isNaN(fecha)) return;
+
+      // clave por año-mes
+      let mesClave = fecha.getFullYear()+"-"+(fecha.getMonth()+1).toString().padStart(2,"0");
+      if(!resumen[mesClave]) {
+        resumen[mesClave] = {
+          Atendido:0,
+          Pendiente:0,
+          "En atención":0,
+          "No compete":0,
+          PendientesMes:0,
+          PendientesAcumulado:0,
+          IndicadorDias:0
+        };
+      }
+
+      let estado = s["Estado Reporte"].trim();
+      if(estado==="Pendiente"){
+        resumen[mesClave].Pendiente++;
+      } else if(estado==="En atención"){
+        resumen[mesClave]["En atención"]++;
+      } else if(estado==="Atendido"){
+        resumen[mesClave].Atendido++;
+      } else if(estado==="No compete"){
+        resumen[mesClave]["No compete"]++;
+      }
+    });
+
+    // Orden cronológico de meses (YYYY-MM)
+    let mesesOrdenados = Object.keys(resumen).sort();
+
+    // Calcular Pendientes/En Atención, acumulado y el indicador dinámico
+    let acumulado = 0;
+    let totalMeses = mesesOrdenados.length;
+    mesesOrdenados.forEach((m, idx) => {
+      const fila = resumen[m];
+      fila.PendientesMes = fila.Pendiente + fila["En atención"];
+      acumulado += fila.PendientesMes;
+      fila.PendientesAcumulado = acumulado;
+
+      // Factor dinámico: último mes = 1, hacia atrás +30 cada vez
+      let distanciaDesdeFinal = (totalMeses - 1) - idx;
+      let factor = distanciaDesdeFinal * 30;
+      if (distanciaDesdeFinal === 0) factor = 1; // último mes = 1
+      fila.IndicadorDias = fila.PendientesMes * factor;
+    });
+
+    // Renderizar tabla
+    let tabla = `<table class="table table-striped">
+      <thead><tr>
+        <th>Mes</th><th>Atendido</th><th>Pendiente</th><th>En atención</th>
+        <th>No compete</th><th>Pendientes/En Atención</th>
+        <th>Pendientes/En Atención (Acumulado)</th>
+        <th>Indicador de días por solicitudes</th>
+      </tr></thead><tbody>`;
+
+    // Variables para totales
+    let totalAtendido = 0, totalPendiente = 0, totalEnAtencion = 0, totalNoCompete = 0;
+    let totalPendMes = 0, totalPendAcum = 0, totalIndicador = 0;
+
+    mesesOrdenados.forEach(m => {
+      const r = resumen[m];
+      const [anio, mesNum] = m.split("-");
+      let nombreMes = new Date(anio, parseInt(mesNum)-1).toLocaleString('es-ES',{month:'long'});
+      nombreMes = nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1);
+
+      tabla += `<tr>
+        <td>${nombreMes} ${anio}</td>
+        <td>${r.Atendido.toLocaleString('es-MX')}</td>
+        <td>${r.Pendiente.toLocaleString('es-MX')}</td>
+        <td>${r["En atención"].toLocaleString('es-MX')}</td>
+        <td>${r["No compete"].toLocaleString('es-MX')}</td>
+        <td>${r.PendientesMes.toLocaleString('es-MX')}</td>
+        <td>${r.PendientesAcumulado.toLocaleString('es-MX')}</td>
+        <td>${r.IndicadorDias.toLocaleString('es-MX')}</td>
+      </tr>`;
+
+      // Acumular totales
+      totalAtendido += r.Atendido;
+      totalPendiente += r.Pendiente;
+      totalEnAtencion += r["En atención"];
+      totalNoCompete += r["No compete"];
+      totalPendMes += r.PendientesMes;
+      totalPendAcum = r.PendientesAcumulado; // el acumulado final es el último valor
+      totalIndicador += r.IndicadorDias;
+    });
+
+    // Fila de totales en negritas
+    tabla += `<tr style="font-weight:bold;">
+      <td>Total</td>
+      <td>${totalAtendido.toLocaleString('es-MX')}</td>
+      <td>${totalPendiente.toLocaleString('es-MX')}</td>
+      <td>${totalEnAtencion.toLocaleString('es-MX')}</td>
+      <td>${totalNoCompete.toLocaleString('es-MX')}</td>
+      <td>${totalPendMes.toLocaleString('es-MX')}</td>
+      <td>${totalPendAcum.toLocaleString('es-MX')}</td>
+      <td>${totalIndicador.toLocaleString('es-MX')}</td>
     </tr>`;
 
-    // Acumular totales
-    totalAtendido += r.Atendido;
-    totalPendiente += r.Pendiente;
-    totalEnAtencion += r["En atención"];
-    totalNoCompete += r["No compete"];
-    totalPendMes += r.PendientesMes;
-    totalPendAcum = r.PendientesAcumulado; // el acumulado final es el último valor
-    totalIndicador += r.IndicadorDias;
-  });
-
-  // Fila de totales en negritas
-  tabla += `<tr style="font-weight:bold;">
-    <td>Total</td>
-    <td>${totalAtendido.toLocaleString('es-MX')}</td>
-    <td>${totalPendiente.toLocaleString('es-MX')}</td>
-    <td>${totalEnAtencion.toLocaleString('es-MX')}</td>
-    <td>${totalNoCompete.toLocaleString('es-MX')}</td>
-    <td>${totalPendMes.toLocaleString('es-MX')}</td>
-    <td>${totalPendAcum.toLocaleString('es-MX')}</td>
-    <td>${totalIndicador.toLocaleString('es-MX')}</td>
-  </tr>`;
-
-  tabla += `</tbody></table>`;
-  document.getElementById("tablaResumen").innerHTML = tabla;
-}
-
-
-// Mostrar aviso si el celular está en vertical
-function checkOrientation() {
-  if (window.innerHeight > window.innerWidth) {
-    document.getElementById("rotateMessage").style.display = "block";
-  } else {
-    document.getElementById("rotateMessage").style.display = "none";
+    tabla += `</tbody></table>`;
+    document.getElementById("tablaResumen").innerHTML = tabla;
   }
-}
-window.addEventListener("resize", checkOrientation);
-window.addEventListener("load", checkOrientation);
 
-// Toggle sidebar con pestaña flotante
-(function initSidebarToggle() {
-  const tab = document.getElementById("sidebarToggleTab");
-  const sidebar = document.getElementById("sidebar");
+  // ========== INICIALIZADOR FILTROS ==========
+  function inicializarFiltros() {
+    let tiposUnicos = [...new Set(solicitudes.map(s => s["Tipo de reporte"]).filter(Boolean))];
+    let selectTipo = document.getElementById("filtroTipo");
+    tiposUnicos.forEach(t => {
+      let opt = document.createElement("option");
+      opt.value = t;
+      opt.textContent = t;
+      selectTipo.appendChild(opt);
+    });
 
-  if (!tab || !sidebar) return;
+    let estadosUnicos = [...new Set(solicitudes.map(s => s["Estado Reporte"]).filter(Boolean))];
+    let selectEstado = document.getElementById("filtroEstado");
+    estadosUnicos.forEach(e => {
+      let opt = document.createElement("option");
+      opt.value = e;
+      opt.textContent = e;
+      selectEstado.appendChild(opt);
+    });
 
-  // Estado inicial del icono: siempre barras
-tab.textContent = "☰";
+    let mesesUnicos = [...new Set(solicitudes.map(s => {
+      if (!s["Fecha reporte"]) return null;
+      let fecha = new Date(s["Fecha reporte"]);
+      if (isNaN(fecha)) return null;
+      return fecha.toLocaleString('es-ES', { month: 'long' });
+    }).filter(Boolean))];
 
-tab.addEventListener("click", () => {
-  sidebar.classList.toggle("hidden");
-
-  // Mantener siempre el mismo icono
-  tab.textContent = "☰";
-
-  // Ajustar mapa al nuevo tamaño
-  if (map && map.invalidateSize) {
-    setTimeout(() => map.invalidateSize(), 300);
+    let selectMes = document.getElementById("filtroMes");
+    mesesUnicos.forEach(m => {
+      let opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m.charAt(0).toUpperCase() + m.slice(1);
+      selectMes.appendChild(opt);
+    });
   }
-});
-})();
+
+  // ========== CARGAR DATOS ==========
+  console.log("Iniciando carga de datos...");
+  // Mostrar overlay de carga al iniciar
+  try { if (typeof showLoading === 'function') showLoading(); } catch(e){}
+  
+  let coloniasLoaded = false;
+  let solicitudesLoaded = false;
+
+  function iniciarSiTodoEstaListo() {
+    if (coloniasLoaded && solicitudesLoaded) {
+      console.log("✅ TODOS LOS DATOS CARGADOS");
+      precalcularIndices();
+      inicializarFiltros();
+      renderizar("Todos", "Todos", "Todos");
+      console.log("✅ Inicialización completa");
+      try { if (typeof hideLoading === 'function') hideLoading(); } catch(e){}
+    }
+  }
+
+  // Cargar colonias
+  fetch("archivos/vectores/colonias_wgs84_geojson_renombrado.geojson")
+    .then(res => res.json())
+    .then(data => {
+      if (coloniasLayer) return; // Evitar duplicación
+      
+      coloniasLayer = L.geoJson(data, {
+        style: function(feature) {
+          return {
+            color: "#555",
+            weight: 1,
+            fill: true,
+            fillColor: "#eee",
+            fillOpacity: 0.6
+          };
+        },
+        onEachFeature: function(feature, layer) {
+          const nombreColonia = feature.properties.NOMBRE;
+          // Guardar versión normalizada en la propiedad para comparaciones rápidas
+          try { feature.properties._normName = normalizeKey(nombreColonia); } catch(e) { feature.properties._normName = null; }
+          layer.bindPopup(`<b>${nombreColonia}</b><br>Solicitudes: 0`);
+
+          layer.on('click', function(e) {
+            if (L && L.DomEvent) L.DomEvent.stopPropagation(e);
+
+            if (selectedOutline) {
+              map.removeLayer(selectedOutline);
+              selectedOutline = null;
+            }
+
+            selectedOutline = L.geoJSON(layer.toGeoJSON(), {
+              style: { color: "red", weight: 3, fill: false }
+            }).addTo(map);
+
+            if (selectedOutline.bringToFront) selectedOutline.bringToFront();
+
+            layer.openPopup();
+            coloniaSeleccionada = layer;
+            // Renderizar respetando los filtros activos (no forzar 'Todos')
+            try {
+              const tipo = document.getElementById('filtroTipo')?.value || 'Todos';
+              const estado = document.getElementById('filtroEstado')?.value || 'Todos';
+              const mes = document.getElementById('filtroMes')?.value || 'Todos';
+              renderizar(tipo, estado, mes);
+            } catch (e) {
+              renderizar('Todos','Todos','Todos');
+            }
+          });
+
+          layer.on('popupclose', function() {
+            if (selectedOutline) {
+              map.removeLayer(selectedOutline);
+              selectedOutline = null;
+            }
+            if (coloniaSeleccionada === layer) {
+              coloniaSeleccionada = null;
+              // Restaurar la visualización previa llamando a renderizar con filtros actuales
+              try {
+                const tipo = document.getElementById('filtroTipo')?.value || 'Todos';
+                const estado = document.getElementById('filtroEstado')?.value || 'Todos';
+                const mes = document.getElementById('filtroMes')?.value || 'Todos';
+                renderizar(tipo, estado, mes);
+              } catch (e) {
+                renderizar('Todos','Todos','Todos');
+              }
+            }
+          });
+        }
+      }).addTo(map);
+
+      coloniasLayer.eachLayer(layer => {
+        let nombre = layer.feature.properties.NOMBRE;
+        let norm = layer.feature.properties._normName || normalizeKey(nombre);
+        if (norm) normToColoniaName[norm] = nombre;
+        if(nombre) {
+          let opt = document.createElement("option");
+          opt.value = nombre;
+          document.getElementById("sugerenciasColonias").appendChild(opt);
+        }
+      });
+
+      coloniasLoaded = true;
+      console.log("✅ Colonias cargadas");
+      iniciarSiTodoEstaListo();
+    })
+    .catch(err => console.error("Error al cargar colonias:", err));
+
+  // Cargar solicitudes
+  fetch("archivos/solicitudes/Diciembre2025.geojson")
+    .then(res => res.json())
+    .then(data => {
+      if (solicitudesGeoJSON) return; // Evitar duplicación
+      
+      solicitudesGeoJSON = data;
+
+      solicitudes = data.features
+        .filter(f => f.geometry && f.geometry.type === "Point" && Array.isArray(f.geometry.coordinates))
+        .map(f => {
+          const rawCol = f.properties["name"] || f.properties["NOMBRE"] || f.properties["colonia"] || null;
+          return {
+            "Número folio": f.properties["Número folio"],
+            "Tipo de reporte": f.properties["Tipo de reporte"],
+            "Estado Reporte": f.properties["Estado Reporte"],
+            "Fecha reporte": f.properties["Fecha reporte"],
+            "Nombre Ciudadano": f.properties["Nombre Ciudadano"],
+            "Teléfono": f.properties["Teléfono"],
+            "Punto de referencia": f.properties["Punto de referencia"],
+            "Coordenada X": f.geometry.coordinates[0],
+            "Coordenada Y": f.geometry.coordinates[1],
+            "Colonia": rawCol,
+            "ColoniaNorm": normalizeKey(rawCol)
+          };
+        });
+
+      console.log("✅ Solicitudes cargadas:", solicitudes.length);
+
+      solicitudesLoaded = true;
+      iniciarSiTodoEstaListo();
+    })
+    .catch(err => console.error("Error al cargar solicitudes:", err));
+
+  // ========== EVENT LISTENERS ==========
+  let btnAplicarFiltros = document.getElementById("btnAplicarFiltros");
+  let btnBuscarGeneral = document.getElementById("btnBuscarGeneral");
+  let btnResetBuscar = document.getElementById("btnResetBuscar");
+  
+  // Agregar listeners solo una vez
+  if (btnAplicarFiltros && !btnAplicarFiltros.hasListener) {
+    btnAplicarFiltros.addEventListener("click", () => {
+      const tipo = document.getElementById("filtroTipo").value;
+      const estado = document.getElementById("filtroEstado").value;
+      const mes = document.getElementById("filtroMes").value;
+      renderizar(tipo, estado, mes);
+    });
+    btnAplicarFiltros.hasListener = true;
+  }
+
+  if (btnBuscarGeneral && !btnBuscarGeneral.hasListener) {
+    btnBuscarGeneral.addEventListener("click", () => {
+      let valor = document.getElementById("buscadorGeneral").value.trim();
+      if (!valor) return;
+
+      let solicitud = solicitudes.find(s => s["Número folio"] == valor);
+      if (solicitud) {
+        let lat = parseFloat(solicitud["Coordenada Y"]);
+        let lon = parseFloat(solicitud["Coordenada X"]);
+        if (!isNaN(lat) && !isNaN(lon)) {
+          map.setView([lat, lon], 17);
+          
+          // Crear y mostrar popup con la información del folio
+          const popupContent = `
+            <div style="max-width: 250px;">
+              <b>Folio:</b> ${solicitud["Número folio"]}<br>
+              <b>Ciudadano:</b> ${solicitud["Nombre Ciudadano"] || 'N/A'}<br>
+              <b>Teléfono:</b> ${solicitud["Teléfono"] || 'N/A'}<br>
+              <b>Tipo:</b> ${solicitud["Tipo de reporte"]}<br>
+              <b>Estado:</b> ${solicitud["Estado Reporte"]}<br>
+              <b>Punto de referencia:</b> ${solicitud["Punto de referencia"] || 'N/A'}<br>
+              <b>Fecha:</b> ${solicitud["Fecha reporte"] || 'N/A'}
+            </div>
+          `;
+          L.popup()
+            .setLatLng([lat, lon])
+            .setContent(popupContent)
+            .openOn(map);
+        }
+
+        let tipo = solicitud["Tipo de reporte"];
+        let estado = solicitud["Estado Reporte"];
+        document.getElementById("filtroTipo").value = tipo || "Todos";
+        document.getElementById("filtroEstado").value = estado || "Todos";
+        renderizar(tipo || "Todos", estado || "Todos", "Todos");
+        return;
+      }
+      // Si no es folio, intentar buscar por colonia (normalizando texto)
+      const valorNorm = normalizeKey(valor);
+      let coloniaLayer = null;
+      try {
+        if (coloniasLayer) {
+          coloniasLayer.eachLayer(layer => {
+            const name = layer.feature && (layer.feature.properties && (layer.feature.properties.NOMBRE || layer.feature.properties.name));
+            const n = normalizeKey(name);
+            if (n && valorNorm && n === valorNorm) {
+              coloniaLayer = layer;
+            }
+          });
+        }
+      } catch (e) {
+        console.log('Error buscando colonia:', e);
+      }
+
+      if (coloniaLayer) {
+        map.fitBounds(coloniaLayer.getBounds());
+        coloniaSeleccionada = coloniaLayer;
+
+        // Llamar a renderizar respetando los filtros activos
+        const tipo = document.getElementById('filtroTipo')?.value || 'Todos';
+        const estado = document.getElementById('filtroEstado')?.value || 'Todos';
+        const mes = document.getElementById('filtroMes')?.value || 'Todos';
+        renderizar(tipo, estado, mes);
+        return;
+      }
+
+      alert("No se encontró folio ni colonia con: " + valor);
+    });
+    btnBuscarGeneral.hasListener = true;
+  }
+
+  if (btnResetBuscar && !btnResetBuscar.hasListener) {
+    btnResetBuscar.addEventListener("click", () => {
+      // Mostrar loading overlay y deshabilitar botón de inmediato (síncrono)
+      const loadingDiv = document.getElementById('loadingOverlay');
+      if (loadingDiv) loadingDiv.style.display = 'flex';
+      btnResetBuscar.disabled = true;
+      btnResetBuscar.style.opacity = '0.5';
+      
+      document.getElementById("buscadorGeneral").value = "";
+      document.getElementById("filtroTipo").value = "Todos";
+      document.getElementById("filtroEstado").value = "Todos";
+      document.getElementById("filtroMes").value = "Todos";
+      coloniaSeleccionada = null;
+      if (selectedOutline) {
+        map.removeLayer(selectedOutline);
+        selectedOutline = null;
+      }
+      renderizar("Todos", "Todos", "Todos");
+      map.setView([19.35, -99.2], 13);
+      // Re-habilitar botón después de que termine la carga
+      setTimeout(() => {
+        btnResetBuscar.disabled = false;
+        btnResetBuscar.style.opacity = '1';
+      }, 600);
+    });
+    btnResetBuscar.hasListener = true;
+  }
+
+  // Toggle Sidebar
+  let sidebarToggleTab = document.getElementById("sidebarToggleTab");
+  if (sidebarToggleTab && !sidebarToggleTab.hasListener) {
+    let sidebarIsHidden = false; // Estado interno del toggle
+    const sidebarWidth = 700; // ancho del sidebar en px (debe coincidir con CSS)
+    const tabHeight = 40;
+    
+    // Función para actualizar el estado visual del sidebar y la pestaña
+    function updateSidebarState() {
+      const sidebar = document.getElementById('sidebar');
+      const tab = document.getElementById('sidebarToggleTab');
+      if (!sidebar || !tab) return;
+      
+      if (sidebarIsHidden) {
+        // Ocultar: establecer width a 36px (solo la pestaña visible) y transform
+        sidebar.style.width = '36px';
+        sidebar.style.padding = '0';
+        sidebar.style.overflow = 'visible';
+        tab.style.position = 'fixed';
+        tab.style.left = '0px';
+        tab.style.top = '70px';
+        tab.style.width = '36px';
+        tab.textContent = '☰';
+        console.log('Sidebar ocultado');
+      } else {
+        // Mostrar: restaurar ancho original
+        sidebar.style.width = sidebarWidth + 'px';
+        sidebar.style.padding = '10px';
+        sidebar.style.overflow = 'auto';
+        tab.style.position = 'fixed';
+        tab.style.left = (sidebarWidth - 36) + 'px';
+        tab.style.top = '70px';
+        tab.style.width = '36px';
+        tab.textContent = '☰';
+        console.log('Sidebar visible');
+      }
+    }
+
+    // Event listener del toggle
+    sidebarToggleTab.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      sidebarIsHidden = !sidebarIsHidden;
+      console.log('Toggle clicked. Sidebar ahora oculto:', sidebarIsHidden);
+      updateSidebarState();
+      
+      // Actualizar mapa tras transición
+      setTimeout(() => {
+        if (map && map.invalidateSize) {
+          map.invalidateSize();
+        }
+      }, 350);
+    });
+
+    // Reposicionar en resize
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(updateSidebarState, 100);
+    });
+    
+    sidebarToggleTab.hasListener = true;
+    // Inicializar al cargar
+    setTimeout(updateSidebarState, 100);
+  }
+
+  // ========== CONTROLES MAPA: LEYENDA Y TOGGLE PUNTOS ==========
+  function createMapControls() {
+    // Leyenda
+    if (!legendControl) {
+      legendControl = L.control({ position: 'topright' });
+      legendControl.onAdd = function(map) {
+        var div = L.DomUtil.create('div', 'info legend');
+        div.id = 'mapLegend';
+        div.style.background = 'white';
+        div.style.padding = '6px';
+        div.style.boxShadow = '0 0 6px rgba(0,0,0,0.3)';
+        div.innerHTML = '<b>Solicitudes</b><br>Cargando...';
+        L.DomEvent.disableClickPropagation(div);
+        return div;
+      };
+      legendControl.addTo(map);
+    }
+
+    // Toggle puntos (icono estilo "ojo")
+    if (!puntosToggleControl) {
+      puntosToggleControl = L.control({ position: 'topright' });
+      puntosToggleControl.onAdd = function(map) {
+        var div = L.DomUtil.create('div', 'info toggle');
+        div.style.background = 'white';
+        div.style.padding = '4px';
+        div.style.marginTop = '6px';
+        div.style.boxShadow = '0 0 6px rgba(0,0,0,0.15)';
+        var btn = document.createElement('button');
+        btn.id = 'btnTogglePuntos';
+        btn.title = 'Mostrar / Ocultar puntos';
+        btn.style.border = 'none';
+        btn.style.background = 'transparent';
+        btn.style.cursor = 'pointer';
+        btn.style.fontSize = '18px';
+        btn.style.lineHeight = '1';
+        btn.innerHTML = '👁️';
+        div.appendChild(btn);
+        L.DomEvent.disableClickPropagation(div);
+
+        btn.addEventListener('click', function() {
+          showPuntos = !showPuntos;
+          if (showPuntos) {
+            if (puntosLayer && !map.hasLayer(puntosLayer)) map.addLayer(puntosLayer);
+            btn.style.opacity = '1';
+          } else {
+            if (map.hasLayer(puntosLayer)) map.removeLayer(puntosLayer);
+            btn.style.opacity = '0.4';
+          }
+        });
+
+        return div;
+      };
+      puntosToggleControl.addTo(map);
+    }
+  }
+
+  function updateLegend(breaks) {
+    var div = document.getElementById('mapLegend');
+    if (!div) return;
+    if (!breaks || breaks.length === 0) {
+      div.innerHTML = '<b>Solicitudes</b><br>No hay datos';
+      return;
+    }
+    var html = '<b>Solicitudes</b><br>';
+    for (var i = 0; i < breaks.length; i++) {
+      var min = (i === 0) ? 1 : (breaks[i - 1] + 1);
+      var max = breaks[i];
+      var color = classColor(i);
+      html += '<div style="display:flex;align-items:center;margin-bottom:4px"><span style="width:16px;height:12px;background:' + color + ';display:inline-block;margin-right:6px;border:1px solid #555"></span><span>' + min + ' - ' + max + '</span></div>';
+    }
+    div.innerHTML = html;
+  }
+
+  // Mostrar aviso de rotación SOLO en dispositivos móviles / pantallas estrechas y en orientación vertical
+  function checkOrientation() {
+    const rotateDiv = document.getElementById('rotateMessage');
+    if (!rotateDiv) return;
+    // Mostrar aviso SOLO en pantallas pequeñas (móviles). Evitar mostrar en equipos de escritorio táctiles.
+    const isMobileWidth = window.innerWidth <= 768;
+    if (isMobileWidth && window.innerHeight > window.innerWidth) {
+      rotateDiv.style.display = 'flex';
+    } else {
+      rotateDiv.style.display = 'none';
+    }
+    // Reposicionar la pestaña toggle si existe
+    try { if (typeof positionToggleTab === 'function') positionToggleTab(); } catch(e){}
+  }
+  window.addEventListener('resize', checkOrientation);
+  window.addEventListener('orientationchange', checkOrientation);
+  window.addEventListener('load', checkOrientation);
 
 </script>
 
 </body>
 </html>
+
 
 
