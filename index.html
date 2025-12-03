@@ -229,6 +229,9 @@
   var selectedOutline = null;
   var normToColoniaName = {};
   var lastTipoForTable = null;
+  
+  // ✅ NUEVA OPTIMIZACIÓN: Índice espacial para matching rápido de coordenadas
+  var coordIndexMap = new Map(); // Clave: "lon,lat" -> array de IDs
 
   // Inicializar el mapa antes de cargar capas y datos
   try {
@@ -411,14 +414,43 @@
         .trim()
         .toUpperCase()
         .normalize('NFD')
-        .replace(/[\u0000-\u001F\u007F]/g, '') // Remove control characters
-        .replace(/[\u0000-\u0000]/g, '') // This line is redundant and can be removed
+        .replace(/[\u0000-\u001F\u007F]/g, '')
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/[^A-Z0-9\s]/g, '')
         .replace(/\s+/g, ' ');
     } catch (e) {
       return String(s).trim().toUpperCase();
     }
+  }
+
+  // ✅ NUEVA OPTIMIZACIÓN: Simplificar geometrías de polígonos para reducir vértices
+  function simplifyGeometry(coords, tolerance = 0.001) {
+    if (!coords || coords.length < 3) return coords;
+    // Douglas-Peucker simplificado para reducir puntos en polígonos
+    const simplified = [];
+    const len = coords.length;
+    // Siempre mantener primer y último punto
+    simplified.push(coords[0]);
+    // Tomar cada N puntos (más agresivo en móviles)
+    const step = isMobile ? 3 : 2;
+    for (let i = step; i < len - 1; i += step) {
+      simplified.push(coords[i]);
+    }
+    simplified.push(coords[len - 1]);
+    return simplified;
+  }
+
+  // ✅ NUEVA OPTIMIZACIÓN: Debounce para evitar múltiples renders rápidos
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
   }
 
   // ========== OBTENER IDs FILTRADOS ==========
@@ -467,13 +499,25 @@
     indiceEstado = {};
     indiceMes = {};
     estadisticasPorColonia = {};
+  coordIndexMap.clear(); // Limpiar índice espacial
 
     solicitudes.forEach((s, idx) => {
       s._id = idx;
       solicitudPorId[idx] = s;
       allIds.push(idx);
 
+      // ✅ NUEVA OPTIMIZACIÓN: Construir índice espacial
+      const lon = Number(s["Coordenada X"]);
+      const lat = Number(s["Coordenada Y"]);
+      if (!isNaN(lon) && !isNaN(lat)) {
+        // Redondear a 6 decimales para agrupación (~10cm precisión)
+        const key = `${lon.toFixed(6)},${lat.toFixed(6)}`;
+        if (!coordIndexMap.has(key)) coordIndexMap.set(key, []);
+        coordIndexMap.get(key).push(idx);
+      }
+
       const tipo = s["Tipo de reporte"] || "Sin tipo";
+        console.log('✅ Índice espacial construido con', coordIndexMap.size, 'ubicaciones únicas');
       if (!indiceTipo[tipo]) indiceTipo[tipo] = [];
       indiceTipo[tipo].push(idx);
 
@@ -569,30 +613,17 @@
     const allowedIds = new Set(idsFiltradosRespectCol);
     const featuresFiltradas = solicitudesGeoJSON.features.filter((f, idx) => {
       if (!f.geometry || f.geometry.type !== "Point" || !Array.isArray(f.geometry.coordinates)) return false;
-      // Usar la lista de ids permitidos (pre-filtrada por índices y por colonia si aplica)
-      // Buscamos el _id asignado en solicitudPorId comparando coordenadas y folio
-      const props = f.properties || {};
-      // Intentamos emparejar por 'Número folio' si existe
-      const folio = props["Número folio"];
-      if (folio !== undefined && folio !== null) {
-        // buscar el índice en solicitudPorId (nota: solicitudPorId usa índices numéricos, buscamos por folio)
-        // Para rendimiento asumimos que el orden de features corresponde a los índices usados al parsear solicitudesGeoJSON
-      }
-      // Como heurística fiable utilizamos la posición: encontrar si las coordenadas están dentro del conjunto filtrado
-      // Construimos una clave simple lon,lat
+      
+      // ✅ MEJORA: Usar índice espacial para búsqueda rápida
       const lon = f.geometry.coordinates[0];
       const lat = f.geometry.coordinates[1];
-      // Buscar si algún id en allowedIds corresponde a estas coordenadas
-      let match = false;
-      for (let id of allowedIds) {
-        const s = solicitudPorId[id];
-        if (!s) continue;
-        const sx = Number(s["Coordenada X"]);
-        const sy = Number(s["Coordenada Y"]);
-        if (isNaN(sx) || isNaN(sy)) continue;
-        if (Math.abs(sx - lon) < 1e-6 && Math.abs(sy - lat) < 1e-6) { match = true; break; }
-      }
-      return match;
+      const key = `${lon.toFixed(6)},${lat.toFixed(6)}`;
+      const idsEnCoordenada = coordIndexMap.get(key);
+      
+      if (!idsEnCoordenada) return false;
+      
+      // Verificar si alguno de los IDs en esta coordenada está en allowedIds
+      return idsEnCoordenada.some(id => allowedIds.has(id));
     });
 
     // ✅ OPTIMIZACIÓN 3: Inicializar capa de puntos UNA SOLA VEZ
@@ -1090,6 +1121,22 @@
     .then(data => {
       if (coloniasLayer) return; // Evitar duplicación
       
+            // ✅ NUEVA OPTIMIZACIÓN: Simplificar geometrías en móviles
+            if (isMobile && data.features) {
+              data.features.forEach(feature => {
+                if (feature.geometry && feature.geometry.type === 'Polygon' && feature.geometry.coordinates) {
+                  feature.geometry.coordinates = feature.geometry.coordinates.map(ring => 
+                    simplifyGeometry(ring, 0.001)
+                  );
+                } else if (feature.geometry && feature.geometry.type === 'MultiPolygon' && feature.geometry.coordinates) {
+                  feature.geometry.coordinates = feature.geometry.coordinates.map(polygon =>
+                    polygon.map(ring => simplifyGeometry(ring, 0.001))
+                  );
+                }
+              });
+              console.log('✅ Geometrías simplificadas para móvil');
+            }
+      
       coloniasLayer = L.geoJson(data, {
         style: function(feature) {
           return {
@@ -1224,13 +1271,17 @@
   let btnBuscarGeneral = document.getElementById("btnBuscarGeneral");
   let btnResetBuscar = document.getElementById("btnResetBuscar");
   
+    // ✅ NUEVA OPTIMIZACIÓN: Debounce para renderizado suave
+    const renderizarDebounced = debounce(renderizar, 150);
+  
   // Agregar listeners solo una vez
   if (btnAplicarFiltros && !btnAplicarFiltros.hasListener) {
     btnAplicarFiltros.addEventListener("click", () => {
       const tipo = document.getElementById("filtroTipo").value;
       const estado = document.getElementById("filtroEstado").value;
       const mes = document.getElementById("filtroMes").value;
-      renderizar(tipo, estado, mes);
+      // Usar debounce para evitar clics múltiples rápidos
+      renderizarDebounced(tipo, estado, mes);
     });
     btnAplicarFiltros.hasListener = true;
   }
