@@ -4,6 +4,14 @@
   <meta charset="UTF-8">
   <title>Geoportal Solicitudes Ciudadanas</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- PWA Configuration -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#922B21">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Geoportal">
+  <link rel="apple-touch-icon" href="img/logo/logo.png">
 
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -1580,7 +1588,17 @@
   window.addEventListener('orientationchange', checkOrientation);
   window.addEventListener('load', checkOrientation);
 
+  // ========== REGISTRAR SERVICE WORKER PARA PWA ==========
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => console.log('✅ Service Worker registrado:', reg.scope))
+        .catch(err => console.log('❌ Error registrando Service Worker:', err));
+    });
+  }
+
 </script>
 
 </body>
 </html>
+
