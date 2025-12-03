@@ -113,6 +113,18 @@
     font-size: 16px;
     font-weight: 600;
   }
+
+  /* Estilos para datalist en móviles */
+  datalist, datalist option {
+    background: white;
+    color: black;
+    padding: 8px;
+  }
+  datalist option {
+    padding: 8px;
+    background: white;
+    color: black;
+  }
 </style>
 </head>
 <body>
@@ -1262,14 +1274,14 @@
       }
       // Si no es folio, intentar buscar por colonia (normalizando texto)
       const valorNorm = normalizeKey(valor);
-      let coloniaLayer = null;
+      let foundColoniaLayer = null;
       try {
         if (coloniasLayer) {
           coloniasLayer.eachLayer(layer => {
             const name = layer.feature && (layer.feature.properties && (layer.feature.properties.NOMBRE || layer.feature.properties.name));
             const n = normalizeKey(name);
             if (n && valorNorm && n === valorNorm) {
-              coloniaLayer = layer;
+              foundColoniaLayer = layer;
             }
           });
         }
@@ -1277,11 +1289,29 @@
         console.log('Error buscando colonia:', e);
       }
 
-      if (coloniaLayer) {
-        map.fitBounds(coloniaLayer.getBounds());
-        coloniaSeleccionada = coloniaLayer;
+      if (foundColoniaLayer) {
+        // Hacer zoom a la colonia
+        try {
+          map.fitBounds(foundColoniaLayer.getBounds());
+        } catch (e) {
+          console.log("Error en fitBounds:", e);
+        }
+        
+        // Seleccionar colonia y dibujar contorno rojo
+        coloniaSeleccionada = foundColoniaLayer;
+        
+        if (selectedOutline) {
+          map.removeLayer(selectedOutline);
+          selectedOutline = null;
+        }
+        
+        selectedOutline = L.geoJSON(foundColoniaLayer.toGeoJSON(), {
+          style: { color: "red", weight: 3, fill: false }
+        }).addTo(map);
+        
+        if (selectedOutline.bringToFront) selectedOutline.bringToFront();
 
-        // Llamar a renderizar respetando los filtros activos
+        // Renderizar con filtros actuales
         const tipo = document.getElementById('filtroTipo')?.value || 'Todos';
         const estado = document.getElementById('filtroEstado')?.value || 'Todos';
         const mes = document.getElementById('filtroMes')?.value || 'Todos';
