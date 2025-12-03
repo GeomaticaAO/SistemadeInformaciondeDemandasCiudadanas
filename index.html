@@ -133,6 +133,29 @@
     background: white;
     color: black;
   }
+
+  /* Autocompletado (fallback móvil) */
+  .input-group { position: relative; }
+  .autocomplete-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 240px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-top: none;
+    z-index: 3000;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  }
+  .autocomplete-item {
+    padding: 8px 10px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1.2;
+  }
+  .autocomplete-item:hover { background: #f3f3f3; }
 </style>
 </head>
 <body>
@@ -237,6 +260,10 @@
   var selectedOutline = null;
   var normToColoniaName = {};
   var lastTipoForTable = null;
+  
+  // Lista de colonias para autocompletado (fallback móvil)
+  var coloniasList = [];
+  var autocompleteContainer = null;
   
   // ✅ NUEVA OPTIMIZACIÓN: Índice espacial para matching rápido de coordenadas
   var coordIndexMap = new Map(); // Clave: "lon,lat" -> array de IDs
@@ -1201,14 +1228,23 @@
         let norm = layer.feature.properties._normName || normalizeKey(nombre);
         if (norm) normToColoniaName[norm] = nombre;
         if(nombre) {
+          // Guardar para autocompletado
+          coloniasList.push(nombre);
           let opt = document.createElement("option");
           opt.value = nombre;
           document.getElementById("sugerenciasColonias").appendChild(opt);
         }
       });
 
+      // Dejar única y ordenada la lista de colonias
+      try {
+        coloniasList = Array.from(new Set(coloniasList)).sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));
+      } catch(e) {}
+
       coloniasLoaded = true;
       console.log("✅ Colonias cargadas");
+      // Inicializar el autocompletado una vez que tengamos colonias
+      try { initializeAutocompleteFallback(); } catch(e) { console.log('Autocomplete init error', e); }
       iniciarSiTodoEstaListo();
     })
     .catch(err => console.error("Error al cargar colonias:", err));
@@ -1368,6 +1404,84 @@
       alert("No se encontró folio ni colonia con: " + valor);
     });
     btnBuscarGeneral.hasListener = true;
+  }
+
+  // ========== AUTOCOMPLETADO FALLBACK (MÓVIL Y ESCRITORIO) ==========
+  function initializeAutocompleteFallback() {
+    // Activar en todos los dispositivos para experiencia uniforme
+    try {
+      const input = document.getElementById('buscadorGeneral');
+      if (!input) return;
+      const group = input.closest('.input-group') || document.getElementById('sidebar');
+      if (!group) return;
+
+      // Crear contenedor si no existe
+      if (!autocompleteContainer) {
+        autocompleteContainer = document.createElement('div');
+        autocompleteContainer.id = 'autocompleteList';
+        autocompleteContainer.className = 'autocomplete-list';
+        autocompleteContainer.style.display = 'none';
+        group.appendChild(autocompleteContainer);
+      }
+
+      const renderSuggestions = (q) => {
+        if (!q || q.trim().length < 1) { autocompleteContainer.style.display = 'none'; autocompleteContainer.innerHTML=''; return; }
+        const qn = normalizeKey(q);
+        const matches = [];
+        for (let i = 0; i < coloniasList.length; i++) {
+          const name = coloniasList[i];
+          const nn = normalizeKey(name);
+          if (nn && nn.indexOf(qn) !== -1) {
+            matches.push({ name, pos: nn.indexOf(qn) });
+          }
+          if (matches.length >= 50) break; // límite razonable
+        }
+        matches.sort((a,b)=> a.pos - b.pos || a.name.localeCompare(b.name,'es',{sensitivity:'base'}));
+        const top = matches.slice(0, 15);
+        if (top.length === 0) { autocompleteContainer.style.display = 'none'; autocompleteContainer.innerHTML=''; return; }
+
+        let html = '';
+        top.forEach(m => {
+          html += `<div class="autocomplete-item" data-value="${m.name.replace(/"/g,'&quot;')}">${m.name}</div>`;
+        });
+        autocompleteContainer.innerHTML = html;
+        autocompleteContainer.style.display = 'block';
+
+        // Click handler por item
+        Array.from(autocompleteContainer.children).forEach(el => {
+          el.addEventListener('click', () => {
+            const val = el.getAttribute('data-value');
+            input.value = val || '';
+            autocompleteContainer.style.display = 'none';
+            // No disparamos búsqueda automática; usuario decide
+          }, { once: true });
+        });
+      };
+
+      // Listeners del input
+      input.addEventListener('input', () => renderSuggestions(input.value));
+      input.addEventListener('focus', () => {
+        if (input.value && input.value.length > 0) renderSuggestions(input.value);
+      });
+      input.addEventListener('blur', () => {
+        // pequeño delay para permitir click en la lista
+        setTimeout(() => { if (autocompleteContainer) autocompleteContainer.style.display = 'none'; }, 150);
+      });
+
+      // Enter: si hay sugerencias visibles, tomar la primera
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && autocompleteContainer && autocompleteContainer.style.display !== 'none') {
+          const first = autocompleteContainer.querySelector('.autocomplete-item');
+          if (first) {
+            e.preventDefault();
+            input.value = first.getAttribute('data-value');
+            autocompleteContainer.style.display = 'none';
+          }
+        }
+      });
+    } catch (e) {
+      console.log('Autocomplete fallback error:', e);
+    }
   }
 
   if (btnResetBuscar && !btnResetBuscar.hasListener) {
