@@ -1128,24 +1128,11 @@
     .then(res => res.json())
     .then(data => {
       if (coloniasLayer) return; // Evitar duplicación
-      
-            // ✅ NUEVA OPTIMIZACIÓN: Simplificar geometrías en móviles
-            if (isMobile && data.features) {
-              data.features.forEach(feature => {
-                if (feature.geometry && feature.geometry.type === 'Polygon' && feature.geometry.coordinates) {
-                  feature.geometry.coordinates = feature.geometry.coordinates.map(ring => 
-                    simplifyGeometry(ring, 0.001)
-                  );
-                } else if (feature.geometry && feature.geometry.type === 'MultiPolygon' && feature.geometry.coordinates) {
-                  feature.geometry.coordinates = feature.geometry.coordinates.map(polygon =>
-                    polygon.map(ring => simplifyGeometry(ring, 0.001))
-                  );
-                }
-              });
-              console.log('✅ Geometrías simplificadas para móvil');
-            }
+      // Desactivado: mantemos geometría original para evitar deformaciones en móvil
       
       coloniasLayer = L.geoJson(data, {
+        renderer: L.canvas(),
+        smoothFactor: 0,
         style: function(feature) {
           return {
             color: "#555",
@@ -1601,4 +1588,3 @@
 
 </body>
 </html>
-
