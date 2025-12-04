@@ -1058,14 +1058,14 @@
     let tabla = `<table class="table table-striped">
       <thead><tr>
         <th>Mes</th><th>Atendido</th><th>Pendiente</th><th>En atención</th>
-        <th>No compete</th><th>Pendientes/En Atención</th>
+        <th>No compete</th><th>Total por Mes</th><th>Pendientes/En Atención</th>
         <th>Pendientes/En Atención (Acumulado)</th>
         <th>Indicador de días por solicitudes</th>
       </tr></thead><tbody>`;
 
     // Variables para totales
     let totalAtendido = 0, totalPendiente = 0, totalEnAtencion = 0, totalNoCompete = 0;
-    let totalPendMes = 0, totalPendAcum = 0, totalIndicador = 0;
+    let totalPendMes = 0, totalPendAcum = 0, totalIndicador = 0, totalPorMesSum = 0;
 
     mesesOrdenados.forEach(m => {
       const r = resumen[m];
@@ -1073,12 +1073,15 @@
       let nombreMes = new Date(anio, parseInt(mesNum)-1).toLocaleString('es-ES',{month:'long'});
       nombreMes = nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1);
 
+      const totalMes = r.Atendido + r.Pendiente + r["En atención"] + r["No compete"];
+      
       tabla += `<tr>
         <td>${nombreMes} ${anio}</td>
         <td>${r.Atendido.toLocaleString('es-MX')}</td>
         <td>${r.Pendiente.toLocaleString('es-MX')}</td>
         <td>${r["En atención"].toLocaleString('es-MX')}</td>
         <td>${r["No compete"].toLocaleString('es-MX')}</td>
+        <td>${totalMes.toLocaleString('es-MX')}</td>
         <td>${r.PendientesMes.toLocaleString('es-MX')}</td>
         <td>${r.PendientesAcumulado.toLocaleString('es-MX')}</td>
         <td>${r.IndicadorDias.toLocaleString('es-MX')}</td>
@@ -1089,6 +1092,7 @@
       totalPendiente += r.Pendiente;
       totalEnAtencion += r["En atención"];
       totalNoCompete += r["No compete"];
+      totalPorMesSum += totalMes;
       totalPendMes += r.PendientesMes;
       totalPendAcum = r.PendientesAcumulado; // el acumulado final es el último valor
       totalIndicador += r.IndicadorDias;
@@ -1101,6 +1105,7 @@
       <td>${totalPendiente.toLocaleString('es-MX')}</td>
       <td>${totalEnAtencion.toLocaleString('es-MX')}</td>
       <td>${totalNoCompete.toLocaleString('es-MX')}</td>
+      <td>${totalPorMesSum.toLocaleString('es-MX')}</td>
       <td>${totalPendMes.toLocaleString('es-MX')}</td>
       <td>${totalPendAcum.toLocaleString('es-MX')}</td>
       <td>${totalIndicador.toLocaleString('es-MX')}</td>
