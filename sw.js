@@ -1,5 +1,5 @@
 // Service Worker para PWA - Cache básico
-const CACHE_NAME = 'geoportal-v2';
+const CACHE_NAME = 'geoportal-v3';
 const urlsToCache = [
   './',
   './index.html',
