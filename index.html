@@ -468,6 +468,16 @@
   var coloniasList = [];
   var autocompleteContainer = null;
   
+  // Cache para tablas de análisis
+  var tablaCiudadanosCache = null;
+  var tablaTiposCache = null;
+  var solicitudesCount = 0; // Para detectar cambios en los datos
+  
+  // Cache para tablas de análisis
+  var tablaCiudadanosCache = null;
+  var tablaTiposCache = null;
+  var solicitudesCount = 0; // Para detectar cambios en los datos
+  
   // ✅ NUEVA OPTIMIZACIÓN: Índice espacial para matching rápido de coordenadas
   var coordIndexMap = new Map(); // Clave: "lon,lat" -> array de IDs
 
@@ -1793,7 +1803,15 @@
   }
 
   // ========== TABLA POR TIPO DE SOLICITUD (INVERSA) ==========
-  function generarTablaTipos() {
+  function generarTablaTipos(forzarRecalculo = false) {
+    // Si ya existe en caché y los datos no han cambiado, usar el caché
+    if (!forzarRecalculo && tablaTiposCache && solicitudesCount === solicitudes.length) {
+      document.getElementById('contenidoTablaTipos').innerHTML = tablaTiposCache;
+      // Re-adjuntar event listeners
+      adjuntarListenersTipos();
+      return;
+    }
+    
     // Agrupar solicitudes por tipo
     const tipos = {};
     
@@ -1902,8 +1920,18 @@
     
     html += '</tbody></table>';
     
+    // Guardar en caché
+    tablaTiposCache = html;
+    
     document.getElementById('contenidoTablaTipos').innerHTML = html;
     
+    adjuntarListenersTipos();
+    
+    // Habilitar selección de celdas
+    habilitarSeleccionCeldas();
+  }
+  
+  function adjuntarListenersTipos() {
     // Agregar event listeners para toggle solo en el icono
     document.querySelectorAll('#contenidoTablaTipos .toggle-icon').forEach(icon => {
       icon.style.cursor = 'pointer';
@@ -1928,7 +1956,15 @@
   }
 
   // ========== TABLA CIUDADANOS ==========
-  function generarTablaCiudadanos() {
+  function generarTablaCiudadanos(forzarRecalculo = false) {
+    // Si ya existe en caché y los datos no han cambiado, usar el caché
+    if (!forzarRecalculo && tablaCiudadanosCache && solicitudesCount === solicitudes.length) {
+      document.getElementById('contenidoTablaCiudadanos').innerHTML = tablaCiudadanosCache;
+      // Re-adjuntar event listeners
+      adjuntarListenersCiudadanos();
+      return;
+    }
+    
     // Agrupar solicitudes por teléfono
     const ciudadanos = {};
     
@@ -2036,10 +2072,18 @@
     
     html += '</tbody></table>';
     
+    // Guardar en caché
+    tablaCiudadanosCache = html;
+    
     document.getElementById('contenidoTablaCiudadanos').innerHTML = html;
     
+    adjuntarListenersCiudadanos();
+    habilitarSeleccionCeldas();
+  }
+  
+  function adjuntarListenersCiudadanos() {
     // Agregar event listeners para toggle solo en el icono
-    document.querySelectorAll('.toggle-icon').forEach(icon => {
+    document.querySelectorAll('#contenidoTablaCiudadanos .toggle-icon').forEach(icon => {
       icon.style.cursor = 'pointer';
       icon.addEventListener('click', function(e) {
         e.stopPropagation();
@@ -2178,18 +2222,30 @@
   
   if (btnVerCiudadanos && !btnVerCiudadanos.hasListener) {
     btnVerCiudadanos.addEventListener('click', () => {
-      // Mostrar loading
-      showLoading();
+      // Verificar si los datos han cambiado
+      const datosHanCambiado = solicitudesCount !== solicitudes.length;
       
-      // Usar setTimeout para permitir que se muestre el loading antes de procesar
-      setTimeout(() => {
-        generarTablaCiudadanos();
-        generarTablaTipos();
+      if (datosHanCambiado) {
+        // Datos cambiaron - invalidar caché
+        solicitudesCount = solicitudes.length;
+        tablaCiudadanosCache = null;
+        tablaTiposCache = null;
+      }
+      
+      // Si hay caché válido, usar carga instantánea
+      if (tablaCiudadanosCache && !datosHanCambiado) {
+        modalCiudadanos.style.display = 'block';
+        generarTablaCiudadanos(); // Usa caché interno
+      } else {
+        // Mostrar loading solo si hay que calcular
+        showLoading();
         modalCiudadanos.style.display = 'block';
         
-        // Ocultar loading
-        hideLoading();
-      }, 50);
+        setTimeout(() => {
+          generarTablaCiudadanos();
+          hideLoading();
+        }, 50);
+      }
     });
     btnVerCiudadanos.hasListener = true;
   }
@@ -2215,6 +2271,15 @@
         }
         const statsBar = document.getElementById('statsBar');
         if (statsBar) statsBar.style.display = 'none';
+        
+        // Lazy loading: generar tabla de tipos solo cuando se accede a esa pestaña
+        if (targetTab === 'tabTipos' && !tablaTiposCache) {
+          showLoading();
+          setTimeout(() => {
+            generarTablaTipos();
+            hideLoading();
+          }, 50);
+        }
         
         // Re-habilitar selección en la nueva tabla
         setTimeout(() => habilitarSeleccionCeldas(), 50);
