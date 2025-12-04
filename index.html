@@ -2178,9 +2178,18 @@
   
   if (btnVerCiudadanos && !btnVerCiudadanos.hasListener) {
     btnVerCiudadanos.addEventListener('click', () => {
-      generarTablaCiudadanos();
-      generarTablaTipos();
-      modalCiudadanos.style.display = 'block';
+      // Mostrar loading
+      showLoading();
+      
+      // Usar setTimeout para permitir que se muestre el loading antes de procesar
+      setTimeout(() => {
+        generarTablaCiudadanos();
+        generarTablaTipos();
+        modalCiudadanos.style.display = 'block';
+        
+        // Ocultar loading
+        hideLoading();
+      }, 50);
     });
     btnVerCiudadanos.hasListener = true;
   }
