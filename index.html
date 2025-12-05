@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Geoportal Solicitudes Ciudadanas / Dalia </title>
+  <title>Geoportal Solicitudes Ciudadanas</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <!-- PWA Configuration -->
@@ -1940,7 +1940,11 @@
     // Agregar event listeners para toggle solo en el icono
     document.querySelectorAll('#contenidoTablaTipos .toggle-icon').forEach(icon => {
       icon.style.cursor = 'pointer';
-      icon.addEventListener('click', function(e) {
+      // Clonar el icono para eliminar listeners antiguos
+      const nuevoIcono = icon.cloneNode(true);
+      icon.parentNode.replaceChild(nuevoIcono, icon);
+      
+      nuevoIcono.addEventListener('click', function(e) {
         e.stopPropagation();
         const row = this.closest('.toggle-row');
         const targetId = row.getAttribute('data-target');
@@ -1955,9 +1959,6 @@
         }
       });
     });
-    
-    // Habilitar selección de celdas
-    habilitarSeleccionCeldas();
   }
 
   // ========== TABLA CIUDADANOS ==========
@@ -2099,7 +2100,11 @@
     // Agregar event listeners para toggle solo en el icono
     document.querySelectorAll('#contenidoTablaCiudadanos .toggle-icon').forEach(icon => {
       icon.style.cursor = 'pointer';
-      icon.addEventListener('click', function(e) {
+      // Clonar el icono para eliminar listeners antiguos
+      const nuevoIcono = icon.cloneNode(true);
+      icon.parentNode.replaceChild(nuevoIcono, icon);
+      
+      nuevoIcono.addEventListener('click', function(e) {
         e.stopPropagation();
         const row = this.closest('.toggle-row');
         const targetId = row.getAttribute('data-target');
@@ -2114,9 +2119,6 @@
         }
       });
     });
-    
-    // Habilitar selección de celdas estilo Excel
-    habilitarSeleccionCeldas();
   }
   
   // ========== SELECCIÓN DE CELDAS ESTILO EXCEL ==========
@@ -2280,10 +2282,18 @@
             generarTablaTipos();
             hideLoading();
           }, 50);
+        } else if (targetTab === 'tab-ciudadanos') {
+          // Reactivar listeners de la tabla de ciudadanos si ya existe
+          if (tablasGeneradas.ciudadanos) {
+            setTimeout(() => {
+              adjuntarListenersCiudadanos();
+              habilitarSeleccionCeldas();
+            }, 50);
+          }
         }
         
         // Re-habilitar selección en la nueva tabla
-        setTimeout(() => habilitarSeleccionCeldas(), 50);
+        setTimeout(() => habilitarSeleccionCeldas(), 100);
       });
       btn.hasListener = true;
     }
@@ -2511,3 +2521,4 @@
 
 </body>
 </html>
+
