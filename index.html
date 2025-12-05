@@ -2,12 +2,13 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Geoportal Solicitudes Ciudadanas</title>
+  <title>Geoportal Solicitudes Ciudadanas / Dalia </title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <!-- PWA Configuration -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#922B21">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Geoportal">
@@ -468,15 +469,11 @@
   var coloniasList = [];
   var autocompleteContainer = null;
   
-  // Cache para tablas de análisis
-  var tablaCiudadanosCache = null;
-  var tablaTiposCache = null;
-  var solicitudesCount = 0; // Para detectar cambios en los datos
-  
-  // Cache para tablas de análisis
-  var tablaCiudadanosCache = null;
-  var tablaTiposCache = null;
-  var solicitudesCount = 0; // Para detectar cambios en los datos
+  // Caché para tablas ya generadas
+  var tablasGeneradas = {
+    ciudadanos: false,
+    tipos: false
+  };
   
   // ✅ NUEVA OPTIMIZACIÓN: Índice espacial para matching rápido de coordenadas
   var coordIndexMap = new Map(); // Clave: "lon,lat" -> array de IDs
@@ -1803,19 +1800,20 @@
   }
 
   // ========== TABLA POR TIPO DE SOLICITUD (INVERSA) ==========
-  function generarTablaTipos(forzarRecalculo = false) {
-    // Si ya existe en caché y los datos no han cambiado, usar el caché
-    if (!forzarRecalculo && tablaTiposCache && solicitudesCount === solicitudes.length) {
-      document.getElementById('contenidoTablaTipos').innerHTML = tablaTiposCache;
-      // Re-adjuntar event listeners
+  function generarTablaTipos() {
+    // Si ya está generada, solo reactivar listeners
+    if (tablasGeneradas.tipos) {
       adjuntarListenersTipos();
+      habilitarSeleccionCeldas();
       return;
     }
     
-    // Agrupar solicitudes por tipo
+    // Agrupar solicitudes por tipo - OPTIMIZADO
     const tipos = {};
+    const len = solicitudes.length;
     
-    solicitudes.forEach(s => {
+    for (let i = 0; i < len; i++) {
+      const s = solicitudes[i];
       const tipo = s["Tipo de reporte"] || "Sin tipo";
       const tel = s["Teléfono"] || "Sin teléfono";
       const nombre = s["Nombre Ciudadano"] || "Sin nombre";
@@ -1833,18 +1831,21 @@
         };
       }
       
-      tipos[tipo].total++;
+      const tipoObj = tipos[tipo];
+      tipoObj.total++;
       
-      // Contabilizar por estado
-      if (estado === "Atendido") tipos[tipo].atendido++;
-      else if (estado === "Pendiente") tipos[tipo].pendiente++;
-      else if (estado === "En atención") tipos[tipo].enAtencion++;
-      else if (estado === "No compete") tipos[tipo].noCompete++;
+      // Contabilizar por estado - optimizado
+      switch(estado) {
+        case "Atendido": tipoObj.atendido++; break;
+        case "Pendiente": tipoObj.pendiente++; break;
+        case "En atención": tipoObj.enAtencion++; break;
+        case "No compete": tipoObj.noCompete++; break;
+      }
       
       // Agrupar por ciudadano dentro del tipo
       const ciudadanoKey = tel + '|' + nombre;
-      if (!tipos[tipo].ciudadanos[ciudadanoKey]) {
-        tipos[tipo].ciudadanos[ciudadanoKey] = {
+      if (!tipoObj.ciudadanos[ciudadanoKey]) {
+        tipoObj.ciudadanos[ciudadanoKey] = {
           telefono: tel,
           nombre: nombre,
           total: 0,
@@ -1855,80 +1856,84 @@
         };
       }
       
-      tipos[tipo].ciudadanos[ciudadanoKey].total++;
-      if (estado === "Atendido") tipos[tipo].ciudadanos[ciudadanoKey].atendido++;
-      else if (estado === "Pendiente") tipos[tipo].ciudadanos[ciudadanoKey].pendiente++;
-      else if (estado === "En atención") tipos[tipo].ciudadanos[ciudadanoKey].enAtencion++;
-      else if (estado === "No compete") tipos[tipo].ciudadanos[ciudadanoKey].noCompete++;
-    });
+      const ciudadanoObj = tipoObj.ciudadanos[ciudadanoKey];
+      ciudadanoObj.total++;
+      switch(estado) {
+        case "Atendido": ciudadanoObj.atendido++; break;
+        case "Pendiente": ciudadanoObj.pendiente++; break;
+        case "En atención": ciudadanoObj.enAtencion++; break;
+        case "No compete": ciudadanoObj.noCompete++; break;
+      }
+    }
     
     // Convertir a array y ordenar por total descendente
     const tiposArray = Object.values(tipos).sort((a, b) => b.total - a.total);
     
-    // Generar HTML
-    let html = '<table class="tabla-ciudadanos"><thead><tr>';
-    html += '<th style="width:40px;"></th>';
-    html += '<th>Tipo de Solicitud</th>';
-    html += '<th>Atendido</th>';
-    html += '<th>Pendiente</th>';
-    html += '<th>En atención</th>';
-    html += '<th>No compete</th>';
-    html += '<th>Total</th>';
-    html += '</tr></thead><tbody>';
+    // Generar HTML usando array - MÁS RÁPIDO
+    const htmlParts = [];
+    htmlParts.push('<table class="tabla-ciudadanos"><thead><tr>');
+    htmlParts.push('<th style="width:40px;"></th>');
+    htmlParts.push('<th>Tipo de Solicitud</th>');
+    htmlParts.push('<th>Atendido</th>');
+    htmlParts.push('<th>Pendiente</th>');
+    htmlParts.push('<th>En atención</th>');
+    htmlParts.push('<th>No compete</th>');
+    htmlParts.push('<th>Total</th>');
+    htmlParts.push('</tr></thead><tbody>');
     
     tiposArray.forEach((t, idx) => {
       const detailId = 'detail-tipo-' + idx;
       
       // Fila principal
-      html += `<tr class="toggle-row" data-target="${detailId}">`;
-      html += `<td style="text-align:center;"><span class="toggle-icon">▶</span></td>`;
-      html += `<td><strong>${t.tipo}</strong></td>`;
-      html += `<td style="text-align:center;">${t.atendido}</td>`;
-      html += `<td style="text-align:center;">${t.pendiente}</td>`;
-      html += `<td style="text-align:center;">${t.enAtencion}</td>`;
-      html += `<td style="text-align:center;">${t.noCompete}</td>`;
-      html += `<td style="text-align:center; font-weight:bold;">${t.total}</td>`;
-      html += '</tr>';
+      htmlParts.push(`<tr class="toggle-row" data-target="${detailId}">`);
+      htmlParts.push(`<td style="text-align:center;"><span class="toggle-icon">▶</span></td>`);
+      htmlParts.push(`<td><strong>${t.tipo}</strong></td>`);
+      htmlParts.push(`<td style="text-align:center;">${t.atendido}</td>`);
+      htmlParts.push(`<td style="text-align:center;">${t.pendiente}</td>`);
+      htmlParts.push(`<td style="text-align:center;">${t.enAtencion}</td>`);
+      htmlParts.push(`<td style="text-align:center;">${t.noCompete}</td>`);
+      htmlParts.push(`<td style="text-align:center; font-weight:bold;">${t.total}</td>`);
+      htmlParts.push('</tr>');
       
       // Fila de detalle con ciudadanos
-      html += `<tr class="detail-row" id="${detailId}">`;
-      html += '<td colspan="7"><div class="detail-content">';
-      html += '<strong>Ciudadanos que reportaron este tipo:</strong>';
-      html += '<table class="detail-table"><thead><tr>';
-      html += '<th style="color:#000;">Número Teléfono</th>';
-      html += '<th style="color:#000;">Nombre</th>';
-      html += '<th style="text-align:center; color:#000;">Atendido</th>';
-      html += '<th style="text-align:center; color:#000;">Pendiente</th>';
-      html += '<th style="text-align:center; color:#000;">En atención</th>';
-      html += '<th style="text-align:center; color:#000;">No compete</th>';
-      html += '<th style="text-align:center; color:#000;">Total</th>';
-      html += '</tr></thead><tbody>';
+      htmlParts.push(`<tr class="detail-row" id="${detailId}">`);
+      htmlParts.push('<td colspan="7"><div class="detail-content">');
+      htmlParts.push('<strong>Ciudadanos que reportaron este tipo:</strong>');
+      htmlParts.push('<table class="detail-table"><thead><tr>');
+      htmlParts.push('<th style="color:#000;">Número Teléfono</th>');
+      htmlParts.push('<th style="color:#000;">Nombre</th>');
+      htmlParts.push('<th style="text-align:center; color:#000;">Atendido</th>');
+      htmlParts.push('<th style="text-align:center; color:#000;">Pendiente</th>');
+      htmlParts.push('<th style="text-align:center; color:#000;">En atención</th>');
+      htmlParts.push('<th style="color:#000;">No compete</th>');
+      htmlParts.push('<th style="text-align:center; color:#000;">Total</th>');
+      htmlParts.push('</tr></thead><tbody>');
       
       // Ordenar ciudadanos por total descendente
       const ciudadanosOrdenados = Object.values(t.ciudadanos).sort((a, b) => b.total - a.total);
       ciudadanosOrdenados.forEach(c => {
-        html += `<tr><td>${c.telefono}</td><td>${c.nombre}</td>`;
-        html += `<td style="text-align:center;">${c.atendido}</td>`;
-        html += `<td style="text-align:center;">${c.pendiente}</td>`;
-        html += `<td style="text-align:center;">${c.enAtencion}</td>`;
-        html += `<td style="text-align:center;">${c.noCompete}</td>`;
-        html += `<td style="text-align:center; font-weight:bold;">${c.total}</td></tr>`;
+        htmlParts.push(`<tr><td>${c.telefono}</td><td>${c.nombre}</td>`);
+        htmlParts.push(`<td style="text-align:center;">${c.atendido}</td>`);
+        htmlParts.push(`<td style="text-align:center;">${c.pendiente}</td>`);
+        htmlParts.push(`<td style="text-align:center;">${c.enAtencion}</td>`);
+        htmlParts.push(`<td style="text-align:center;">${c.noCompete}</td>`);
+        htmlParts.push(`<td style="text-align:center; font-weight:bold;">${c.total}</td></tr>`);
       });
       
-      html += '</tbody></table></div></td></tr>';
+      htmlParts.push('</tbody></table></div></td></tr>');
     });
     
-    html += '</tbody></table>';
+    htmlParts.push('</tbody></table>');
     
-    // Guardar en caché
-    tablaTiposCache = html;
-    
-    document.getElementById('contenidoTablaTipos').innerHTML = html;
-    
-    adjuntarListenersTipos();
-    
-    // Habilitar selección de celdas
-    habilitarSeleccionCeldas();
+    // Insertar HTML de forma asíncrona para no bloquear el navegador
+    requestAnimationFrame(() => {
+      document.getElementById('contenidoTablaTipos').innerHTML = htmlParts.join('');
+      tablasGeneradas.tipos = true; // Marcar como generada
+      requestAnimationFrame(() => {
+        adjuntarListenersTipos();
+        habilitarSeleccionCeldas();
+      });
+    });
   }
   
   function adjuntarListenersTipos() {
@@ -1956,19 +1961,20 @@
   }
 
   // ========== TABLA CIUDADANOS ==========
-  function generarTablaCiudadanos(forzarRecalculo = false) {
-    // Si ya existe en caché y los datos no han cambiado, usar el caché
-    if (!forzarRecalculo && tablaCiudadanosCache && solicitudesCount === solicitudes.length) {
-      document.getElementById('contenidoTablaCiudadanos').innerHTML = tablaCiudadanosCache;
-      // Re-adjuntar event listeners
+  function generarTablaCiudadanos() {
+    // Si ya está generada, solo reactivar listeners
+    if (tablasGeneradas.ciudadanos) {
       adjuntarListenersCiudadanos();
+      habilitarSeleccionCeldas();
       return;
     }
     
-    // Agrupar solicitudes por teléfono
+    // Agrupar solicitudes por teléfono - OPTIMIZADO
     const ciudadanos = {};
+    const len = solicitudes.length;
     
-    solicitudes.forEach(s => {
+    for (let i = 0; i < len; i++) {
+      const s = solicitudes[i];
       const tel = s["Teléfono"] || "Sin teléfono";
       const nombre = s["Nombre Ciudadano"] || "Sin nombre";
       const tipo = s["Tipo de reporte"] || "Sin tipo";
@@ -1987,17 +1993,20 @@
         };
       }
       
-      ciudadanos[tel].total++;
+      const ciudadanoObj = ciudadanos[tel];
+      ciudadanoObj.total++;
       
-      // Contabilizar por estado
-      if (estado === "Atendido") ciudadanos[tel].atendido++;
-      else if (estado === "Pendiente") ciudadanos[tel].pendiente++;
-      else if (estado === "En atención") ciudadanos[tel].enAtencion++;
-      else if (estado === "No compete") ciudadanos[tel].noCompete++;
+      // Contabilizar por estado - optimizado con switch
+      switch(estado) {
+        case "Atendido": ciudadanoObj.atendido++; break;
+        case "Pendiente": ciudadanoObj.pendiente++; break;
+        case "En atención": ciudadanoObj.enAtencion++; break;
+        case "No compete": ciudadanoObj.noCompete++; break;
+      }
       
       // Contabilizar por tipo y estado
-      if (!ciudadanos[tel].tipos[tipo]) {
-        ciudadanos[tel].tipos[tipo] = {
+      if (!ciudadanoObj.tipos[tipo]) {
+        ciudadanoObj.tipos[tipo] = {
           total: 0,
           atendido: 0,
           pendiente: 0,
@@ -2005,80 +2014,85 @@
           noCompete: 0
         };
       }
-      ciudadanos[tel].tipos[tipo].total++;
-      if (estado === "Atendido") ciudadanos[tel].tipos[tipo].atendido++;
-      else if (estado === "Pendiente") ciudadanos[tel].tipos[tipo].pendiente++;
-      else if (estado === "En atención") ciudadanos[tel].tipos[tipo].enAtencion++;
-      else if (estado === "No compete") ciudadanos[tel].tipos[tipo].noCompete++;
-    });
+      const tipoObj = ciudadanoObj.tipos[tipo];
+      tipoObj.total++;
+      switch(estado) {
+        case "Atendido": tipoObj.atendido++; break;
+        case "Pendiente": tipoObj.pendiente++; break;
+        case "En atención": tipoObj.enAtencion++; break;
+        case "No compete": tipoObj.noCompete++; break;
+      }
+    }
     
     // Convertir a array y ordenar por total descendente
     const ciudadanosArray = Object.values(ciudadanos).sort((a, b) => b.total - a.total);
     
-    // Generar HTML
-    let html = '<table class="tabla-ciudadanos"><thead><tr>';
-    html += '<th style="width:40px;"></th>'; // Columna para icono desplegable
-    html += '<th>Número Teléfono</th>';
-    html += '<th>Nombre</th>';
-    html += '<th>Atendido</th>';
-    html += '<th>Pendiente</th>';
-    html += '<th>En atención</th>';
-    html += '<th>No compete</th>';
-    html += '<th>Total</th>';
-    html += '</tr></thead><tbody>';
+    // Generar HTML usando array - MÁS RÁPIDO
+    const htmlParts = [];
+    htmlParts.push('<table class="tabla-ciudadanos"><thead><tr>');
+    htmlParts.push('<th style="width:40px;"></th>');
+    htmlParts.push('<th>Número Teléfono</th>');
+    htmlParts.push('<th>Nombre</th>');
+    htmlParts.push('<th>Atendido</th>');
+    htmlParts.push('<th>Pendiente</th>');
+    htmlParts.push('<th>En atención</th>');
+    htmlParts.push('<th>No compete</th>');
+    htmlParts.push('<th>Total</th>');
+    htmlParts.push('</tr></thead><tbody>');
     
     ciudadanosArray.forEach((c, idx) => {
-      const rowId = 'row-' + idx;
       const detailId = 'detail-' + idx;
       
-      // Fila principal (colapsable)
-      html += `<tr class="toggle-row" data-target="${detailId}">`;
-      html += `<td style="text-align:center;"><span class="toggle-icon">▶</span></td>`;
-      html += `<td>${c.telefono}</td>`;
-      html += `<td>${c.nombre}</td>`;
-      html += `<td style="text-align:center;">${c.atendido}</td>`;
-      html += `<td style="text-align:center;">${c.pendiente}</td>`;
-      html += `<td style="text-align:center;">${c.enAtencion}</td>`;
-      html += `<td style="text-align:center;">${c.noCompete}</td>`;
-      html += `<td style="text-align:center; font-weight:bold;">${c.total}</td>`;
-      html += '</tr>';
+      // Fila principal
+      htmlParts.push(`<tr class="toggle-row" data-target="${detailId}">`);
+      htmlParts.push(`<td style="text-align:center;"><span class="toggle-icon">▶</span></td>`);
+      htmlParts.push(`<td>${c.telefono}</td>`);
+      htmlParts.push(`<td>${c.nombre}</td>`);
+      htmlParts.push(`<td style="text-align:center;">${c.atendido}</td>`);
+      htmlParts.push(`<td style="text-align:center;">${c.pendiente}</td>`);
+      htmlParts.push(`<td style="text-align:center;">${c.enAtencion}</td>`);
+      htmlParts.push(`<td style="text-align:center;">${c.noCompete}</td>`);
+      htmlParts.push(`<td style="text-align:center; font-weight:bold;">${c.total}</td>`);
+      htmlParts.push('</tr>');
       
-      // Fila de detalle (oculta por defecto)
-      html += `<tr class="detail-row" id="${detailId}">`;
-      html += '<td colspan="8"><div class="detail-content">';
-      html += '<strong>Detalle por tipo de solicitud:</strong>';
-      html += '<table class="detail-table"><thead><tr>';
-      html += '<th style="color:#000;">Tipo de Solicitud</th>';
-      html += '<th style="text-align:center; color:#000;">Atendido</th>';
-      html += '<th style="text-align:center; color:#000;">Pendiente</th>';
-      html += '<th style="text-align:center; color:#000;">En atención</th>';
-      html += '<th style="text-align:center; color:#000;">No compete</th>';
-      html += '<th style="text-align:center; color:#000;">Total</th>';
-      html += '</tr></thead><tbody>';
+      // Fila de detalle
+      htmlParts.push(`<tr class="detail-row" id="${detailId}">`);
+      htmlParts.push('<td colspan="8"><div class="detail-content">');
+      htmlParts.push('<strong>Detalle por tipo de solicitud:</strong>');
+      htmlParts.push('<table class="detail-table"><thead><tr>');
+      htmlParts.push('<th style="color:#000;">Tipo de Solicitud</th>');
+      htmlParts.push('<th style="text-align:center; color:#000;">Atendido</th>');
+      htmlParts.push('<th style="text-align:center; color:#000;">Pendiente</th>');
+      htmlParts.push('<th style="text-align:center; color:#000;">En atención</th>');
+      htmlParts.push('<th style="text-align:center; color:#000;">No compete</th>');
+      htmlParts.push('<th style="text-align:center; color:#000;">Total</th>');
+      htmlParts.push('</tr></thead><tbody>');
       
       // Ordenar tipos por cantidad descendente
       const tiposOrdenados = Object.entries(c.tipos).sort((a, b) => b[1].total - a[1].total);
       tiposOrdenados.forEach(([tipo, info]) => {
-        html += `<tr><td>${tipo}</td>`;
-        html += `<td style="text-align:center;">${info.atendido}</td>`;
-        html += `<td style="text-align:center;">${info.pendiente}</td>`;
-        html += `<td style="text-align:center;">${info.enAtencion}</td>`;
-        html += `<td style="text-align:center;">${info.noCompete}</td>`;
-        html += `<td style="text-align:center; font-weight:bold;">${info.total}</td></tr>`;
+        htmlParts.push(`<tr><td>${tipo}</td>`);
+        htmlParts.push(`<td style="text-align:center;">${info.atendido}</td>`);
+        htmlParts.push(`<td style="text-align:center;">${info.pendiente}</td>`);
+        htmlParts.push(`<td style="text-align:center;">${info.enAtencion}</td>`);
+        htmlParts.push(`<td style="text-align:center;">${info.noCompete}</td>`);
+        htmlParts.push(`<td style="text-align:center; font-weight:bold;">${info.total}</td></tr>`);
       });
       
-      html += '</tbody></table></div></td></tr>';
+      htmlParts.push('</tbody></table></div></td></tr>');
     });
     
-    html += '</tbody></table>';
+    htmlParts.push('</tbody></table>');
     
-    // Guardar en caché
-    tablaCiudadanosCache = html;
-    
-    document.getElementById('contenidoTablaCiudadanos').innerHTML = html;
-    
-    adjuntarListenersCiudadanos();
-    habilitarSeleccionCeldas();
+    // Insertar HTML de forma asíncrona para no bloquear el navegador
+    requestAnimationFrame(() => {
+      document.getElementById('contenidoTablaCiudadanos').innerHTML = htmlParts.join('');
+      tablasGeneradas.ciudadanos = true; // Marcar como generada
+      requestAnimationFrame(() => {
+        adjuntarListenersCiudadanos();
+        habilitarSeleccionCeldas();
+      });
+    });
   }
   
   function adjuntarListenersCiudadanos() {
@@ -2222,30 +2236,17 @@
   
   if (btnVerCiudadanos && !btnVerCiudadanos.hasListener) {
     btnVerCiudadanos.addEventListener('click', () => {
-      // Verificar si los datos han cambiado
-      const datosHanCambiado = solicitudesCount !== solicitudes.length;
+      // Mostrar loading
+      showLoading();
       
-      if (datosHanCambiado) {
-        // Datos cambiaron - invalidar caché
-        solicitudesCount = solicitudes.length;
-        tablaCiudadanosCache = null;
-        tablaTiposCache = null;
-      }
+      // Abrir modal primero
+      modalCiudadanos.style.display = 'block';
       
-      // Si hay caché válido, usar carga instantánea
-      if (tablaCiudadanosCache && !datosHanCambiado) {
-        modalCiudadanos.style.display = 'block';
-        generarTablaCiudadanos(); // Usa caché interno
-      } else {
-        // Mostrar loading solo si hay que calcular
-        showLoading();
-        modalCiudadanos.style.display = 'block';
-        
-        setTimeout(() => {
-          generarTablaCiudadanos();
-          hideLoading();
-        }, 50);
-      }
+      // Generar solo la tabla activa inicialmente
+      setTimeout(() => {
+        generarTablaCiudadanos();
+        hideLoading();
+      }, 50);
     });
     btnVerCiudadanos.hasListener = true;
   }
@@ -2272,8 +2273,8 @@
         const statsBar = document.getElementById('statsBar');
         if (statsBar) statsBar.style.display = 'none';
         
-        // Lazy loading: generar tabla de tipos solo cuando se accede a esa pestaña
-        if (targetTab === 'tabTipos' && !tablaTiposCache) {
+        // Generar tabla de tipos solo cuando se accede a esa pestaña
+        if (targetTab === 'tab-tipos') {
           showLoading();
           setTimeout(() => {
             generarTablaTipos();
