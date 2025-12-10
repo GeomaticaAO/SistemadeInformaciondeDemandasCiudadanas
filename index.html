@@ -492,6 +492,8 @@
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
+    
+
   } catch (e) {
     console.error('Error inicializando mapa:', e);
   }
@@ -2699,6 +2701,10 @@
       var color = classColor(i);
       html += '<div style="display:flex;align-items:center;margin-bottom:4px"><span style="width:16px;height:12px;background:' + color + ';display:inline-block;margin-right:6px;border:1px solid #555"></span><span>' + min + ' - ' + max + '</span></div>';
     }
+    // Agregar vialidades al final
+    html += '<div style="margin-top:8px;border-top:1px solid #ddd;padding-top:6px">';
+    html += '<div style="display:flex;align-items:center;margin-bottom:4px"><span style="width:16px;height:12px;background:#2563EB;opacity:0.6;border:1px solid #1E40AF;display:inline-block;margin-right:6px;"></span><span>Vialidades Primarias</span></div>';
+    html += '</div>';
     div.innerHTML = html;
   }
 
@@ -2755,4 +2761,3 @@
 
 </body>
 </html>
-
