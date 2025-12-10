@@ -36,6 +36,9 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
+  <!-- Proj4js para transformación de coordenadas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+
 <style>
   /* Base */
   body { margin:0; font-family:'Montserrat', sans-serif; }
@@ -408,11 +411,14 @@
 
       <button class="btn btn-sm mb-3" id="btnAplicarFiltros" style="background-color:#922B21; color:white; font-weight:600;">Aplicar filtros</button>
 
-      <div id="contadorSolicitudes" style="text-align:center; font-family:'Montserrat', sans-serif; font-size:16px; font-weight:600; color:#922B21; margin-bottom:15px;">
+      <div id="contadorSolicitudes" style="text-align:center; font-family:'Montserrat', sans-serif; font-size:14px; font-weight:600; color:#922B21; margin-bottom:15px; line-height:1.4;">
         Total de solicitudes: <span id="totalSolicitudes">0</span>
       </div>
 
       <h4 class="sidebar-title">Estadísticas</h4>
+      <div class="chart-container">
+        <canvas id="chartMesesEstados"></canvas>
+      </div>
       <div class="chart-container">
         <canvas id="chartTipos"></canvas>
       </div>
@@ -446,6 +452,7 @@
   // Declaraciones e inicialización de variables globales usadas en el script
   var map;
   var coloniasLayer = null;
+  var vialidadesLayer = null;
   var solicitudesGeoJSON = null;
   var solicitudes = [];
   var solicitudPorId = {};
@@ -457,7 +464,7 @@
   var puntosLayer = null;
   var legendControl = null;
   var puntosToggleControl = null;
-  var chartTipos = null, chartColonias = null, chartEstados = null;
+  var chartTipos = null, chartColonias = null, chartEstados = null, chartMesesEstados = null;
   var showPuntos = true;
   var zoomendHandlerAdded = false;
   var coloniaSeleccionada = null;
@@ -958,6 +965,117 @@
     let datosTipos = prepararDatos(tipos);
     let datosEstados = prepararDatos(estados);
 
+    // Definir colores y orden de estados (para usar en múltiples gráficas)
+    const ordenEstados = ["Pendiente", "En atención", "Atendido", "No compete"];
+    const coloresEstados = {
+      "Pendiente": "#991B02",
+      "En atención": "#ED8718",
+      "Atendido": "#0BC700",
+      "No compete": "#545454"
+    };
+
+    // ========== GRÁFICA MESES Y ESTADOS ==========
+    // Agrupar solicitudes por mes y estado
+    const mesesEstados = {};
+    const nombresMeses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 
+                          'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    
+    idsFiltradosIgnoreCol.forEach(id => {
+      const s = solicitudPorId[id];
+      if (!s || !s["Fecha reporte"]) return;
+      
+      const fecha = new Date(s["Fecha reporte"]);
+      if (isNaN(fecha)) return;
+      
+      const mesNombre = nombresMeses[fecha.getMonth()];
+      const estado = s["Estado Reporte"] || 'Sin estado';
+      
+      if (!mesesEstados[mesNombre]) {
+        mesesEstados[mesNombre] = {};
+      }
+      mesesEstados[mesNombre][estado] = (mesesEstados[mesNombre][estado] || 0) + 1;
+    });
+
+    // Ordenar meses por orden cronológico (basado en datos disponibles)
+    const mesesOrdenados = nombresMeses.filter(mes => mesesEstados[mes]);
+    const totalsPorMes = mesesOrdenados.map(mes => 
+      Object.values(mesesEstados[mes] || {}).reduce((a, b) => a + b, 0)
+    );
+
+    const datasetsMeses = ordenEstados.map(est => ({
+      label: est,
+      data: mesesOrdenados.map(mes => mesesEstados[mes][est] || 0),
+      backgroundColor: coloresEstados[est] || "#999"
+    }));
+
+    if (chartMesesEstados) {
+      chartMesesEstados.data.labels = mesesOrdenados.map(m => m.charAt(0).toUpperCase() + m.slice(1));
+      chartMesesEstados.data.datasets = datasetsMeses;
+      chartMesesEstados.data.totals = totalsPorMes;
+      chartMesesEstados.update(isMobile ? 'none' : 'none');
+    } else {
+      chartMesesEstados = new Chart(document.getElementById('chartMesesEstados'), {
+        type: 'bar',
+        data: {
+          labels: mesesOrdenados.map(m => m.charAt(0).toUpperCase() + m.slice(1)),
+          datasets: datasetsMeses,
+          totals: totalsPorMes
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 0 },
+          layout: { padding: { right: 50 } },
+          plugins: {
+            title: {
+              display: true,
+              text: 'Solicitudes por Mes y Estado',
+              font: { size: 14, weight: 'bold' },
+              color: '#922B21',
+              padding: { bottom: 10 }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const total = context.chart.data.totals[context.dataIndex];
+                  const valor = context.raw;
+                  return `${context.dataset.label}: ${valor} de ${total}`;
+                }
+              }
+            },
+            legend: { position: 'bottom', labels: { font: { size: 10 } } },
+            datalabels: {
+              display: function(context) {
+                // Solo mostrar en el último segmento (No compete)
+                return context.datasetIndex === context.chart.data.datasets.length - 1;
+              },
+              anchor: 'end',
+              align: 'end',
+              formatter: function(value, context) {
+                const total = context.chart.data.totals[context.dataIndex];
+                return total.toLocaleString('es-MX');
+              },
+              color: '#333',
+              font: { weight: 'bold', size: 10 }
+            }
+          },
+          scales: {
+            x: { stacked: true, ticks: { precision: 0 } },
+            y: {
+              stacked: true,
+              ticks: { font: { size: 9 } },
+              maxRotation: 0,
+              minRotation: 0,
+              categoryPercentage: 0.7,
+              barPercentage: 0.8
+            }
+          }
+        },
+        plugins: [ChartDataLabels]
+      });
+    }
+
     // Gráfica Tipos
     if (chartTipos) {
       chartTipos.data.labels = datosTipos.labels;
@@ -981,6 +1099,13 @@
           animation: { duration: isMobile ? 0 : 0 },
           layout: { padding: { right: 50 } },
           plugins: {
+            title: {
+              display: true,
+              text: 'Solicitudes por Tipo de Reporte',
+              font: { size: 14, weight: 'bold' },
+              color: '#922B21',
+              padding: { bottom: 10 }
+            },
             legend: { display: false },
             datalabels: {
               anchor: 'end',
@@ -1025,14 +1150,6 @@
     const labelsColonias = coloniasOrdenadas.map(c => c.colonia);
     const totalsColonias = coloniasOrdenadas.map(c => c.total);
 
-    const ordenEstados = ["Pendiente", "En atención", "Atendido", "No compete"];
-    const coloresEstados = {
-      "Pendiente": "#991B02",
-      "En atención": "#ED8718",
-      "Atendido": "#0BC700",
-      "No compete": "#545454"
-    };
-
     const datasetsColonias = ordenEstados.map(est => ({
       label: est,
       data: coloniasOrdenadas.map(c => c.estados[est] || 0),
@@ -1059,6 +1176,13 @@
           animation: { duration: 0 },
           layout: { padding: { right: 50 } },
           plugins: {
+            title: {
+              display: true,
+              text: 'Solicitudes por Colonia y Estado',
+              font: { size: 14, weight: 'bold' },
+              color: '#922B21',
+              padding: { bottom: 10 }
+            },
             tooltip: {
               callbacks: {
                 label: function(context) {
@@ -1123,6 +1247,13 @@
           animation: { duration: isMobile ? 0 : 0 },
           layout: { padding: { right: 50 } },
           plugins: {
+            title: {
+              display: true,
+              text: 'Solicitudes por Estado',
+              font: { size: 14, weight: 'bold' },
+              color: '#922B21',
+              padding: { bottom: 10 }
+            },
             legend: { display: false },
             datalabels: {
               anchor: 'end',
@@ -1147,8 +1278,48 @@
 
     // ========== ACTUALIZAR CONTADOR DE SOLICITUDES ==========
     try {
+      const totalSolicitudes = idsFiltradosIgnoreCol.length;
+      
+      // Contar solicitudes en vialidades primarias
+      let enVialidadesPrimarias = 0;
+      
+      if (vialidadesLayer) {
+        // Obtener el GeoJSON de vialidades
+        const vialidadesGeoJSON = vialidadesLayer.toGeoJSON();
+        
+        idsFiltradosIgnoreCol.forEach(id => {
+          const s = solicitudPorId[id];
+          if (!s) return;
+          
+          const lon = Number(s["Coordenada X"]);
+          const lat = Number(s["Coordenada Y"]);
+          
+          if (!isNaN(lon) && !isNaN(lat)) {
+            const punto = turf.point([lon, lat]);
+            
+            // Verificar si el punto está dentro de algún polígono de vialidades
+            let dentroDeVialidad = false;
+            for (let feature of vialidadesGeoJSON.features) {
+              if (turf.booleanPointInPolygon(punto, feature)) {
+                dentroDeVialidad = true;
+                break;
+              }
+            }
+            
+            if (dentroDeVialidad) {
+              enVialidadesPrimarias++;
+            }
+          }
+        });
+      }
+      
+      const enVialidadesLocales = totalSolicitudes - enVialidadesPrimarias;
+      
+      // Actualizar display
       const totalSpan = document.getElementById('totalSolicitudes');
-      if (totalSpan) totalSpan.textContent = idsFiltradosIgnoreCol.length.toLocaleString('es-MX');
+      if (totalSpan) {
+        totalSpan.innerHTML = `<span style="font-size:1.1em">${totalSolicitudes.toLocaleString('es-MX')}</span> (Vialidades Primarias: <span style="font-size:1.1em">${enVialidadesPrimarias.toLocaleString('es-MX')}</span>, Vialidades Locales: <span style="font-size:1.1em">${enVialidadesLocales.toLocaleString('es-MX')}</span>)`;
+      }
     } catch (e) {
       console.log('Error actualizando contador:', e);
     }
@@ -1529,6 +1700,73 @@
       iniciarSiTodoEstaListo();
     })
     .catch(err => console.error("Error al cargar colonias:", err));
+
+  // Cargar vialidades
+  console.log("Cargando vialidades...");
+  fetch("./archivos/vectores/vialidades.geojson")
+    .then(res => {
+      console.log("Respuesta de vialidades recibida, status:", res.status);
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      return res.json();
+    })
+    .then(data => {
+      console.log("JSON parseado correctamente");
+      if (vialidadesLayer) {
+        console.log("Vialidades ya cargadas, saltando...");
+        return;
+      }
+      
+      console.log("Datos de vialidades parseados:", data.features ? data.features.length : 0, "features");
+      console.log("✅ Las coordenadas ya están en WGS84, no se necesita transformación");
+      
+      // Crear capa de vialidades con polígonos rellenos
+      vialidadesLayer = L.geoJson(data, {
+          style: function(feature) {
+            return {
+              fillColor: "#2563EB",    // Azul rey relleno
+              fillOpacity: 0.5,        // Opacidad del relleno
+              color: "#1E40AF",        // Borde azul más oscuro
+              weight: 1,               // Borde delgado
+              opacity: 0.7
+            };
+          },
+          onEachFeature: function(feature, layer) {
+            // Si hay nombre de vialidad, mostrar en popup
+            const nombre = feature.properties.NOMBRE || feature.properties.NOMENCLAT || feature.properties.NOMBREVIAL || 'Vialidad';
+            const tipo = feature.properties.TIPO_VIA || '';
+            layer.bindPopup(`<b>${nombre}</b>${tipo ? '<br>' + tipo : ''}`);
+          }
+      }).addTo(map);
+
+      // Asegurar que las vialidades estén ENCIMA de todas las capas
+      if (vialidadesLayer) {
+        if (vialidadesLayer.bringToFront) {
+          vialidadesLayer.bringToFront();
+        }
+        
+        // Hacer zoom a las vialidades para verificar que se cargaron
+        try {
+          const bounds = vialidadesLayer.getBounds();
+          console.log("Bounds de vialidades:", bounds);
+          console.log("Vialidades visibles en el mapa:", map.hasLayer(vialidadesLayer));
+          
+          // Activar zoom temporal para verificar ubicación
+          setTimeout(() => {
+            map.fitBounds(bounds);
+            console.log("Zoom aplicado a vialidades");
+          }, 2000);
+        } catch (e) {
+          console.log("No se pudo obtener bounds:", e);
+        }
+      }
+
+      console.log("✅ Vialidades cargadas y añadidas al mapa");
+      console.log("Capas en el mapa:", map._layers);
+    })
+    .catch(err => {
+      console.error("❌ Error al cargar vialidades:", err);
+      alert("Error al cargar vialidades: " + err.message);
+    });
 
   // Cargar solicitudes
   fetch("archivos/solicitudes/Diciembre2025.geojson")
@@ -1937,14 +2175,13 @@
   }
   
   function adjuntarListenersTipos() {
-    // Agregar event listeners para toggle solo en el icono
+    // Remover listeners duplicados clonando elementos
     document.querySelectorAll('#contenidoTablaTipos .toggle-icon').forEach(icon => {
-      icon.style.cursor = 'pointer';
-      // Clonar el icono para eliminar listeners antiguos
-      const nuevoIcono = icon.cloneNode(true);
-      icon.parentNode.replaceChild(nuevoIcono, icon);
+      const newIcon = icon.cloneNode(true);
+      icon.parentNode.replaceChild(newIcon, icon);
       
-      nuevoIcono.addEventListener('click', function(e) {
+      newIcon.style.cursor = 'pointer';
+      newIcon.addEventListener('click', function(e) {
         e.stopPropagation();
         const row = this.closest('.toggle-row');
         const targetId = row.getAttribute('data-target');
@@ -1959,6 +2196,9 @@
         }
       });
     });
+    
+    // Habilitar selección de celdas
+    habilitarSeleccionCeldas();
   }
 
   // ========== TABLA CIUDADANOS ==========
@@ -2097,14 +2337,13 @@
   }
   
   function adjuntarListenersCiudadanos() {
-    // Agregar event listeners para toggle solo en el icono
+    // Remover listeners duplicados clonando elementos
     document.querySelectorAll('#contenidoTablaCiudadanos .toggle-icon').forEach(icon => {
-      icon.style.cursor = 'pointer';
-      // Clonar el icono para eliminar listeners antiguos
-      const nuevoIcono = icon.cloneNode(true);
-      icon.parentNode.replaceChild(nuevoIcono, icon);
+      const newIcon = icon.cloneNode(true);
+      icon.parentNode.replaceChild(newIcon, icon);
       
-      nuevoIcono.addEventListener('click', function(e) {
+      newIcon.style.cursor = 'pointer';
+      newIcon.addEventListener('click', function(e) {
         e.stopPropagation();
         const row = this.closest('.toggle-row');
         const targetId = row.getAttribute('data-target');
@@ -2119,6 +2358,9 @@
         }
       });
     });
+    
+    // Habilitar selección de celdas estilo Excel
+    habilitarSeleccionCeldas();
   }
   
   // ========== SELECCIÓN DE CELDAS ESTILO EXCEL ==========
@@ -2282,18 +2524,10 @@
             generarTablaTipos();
             hideLoading();
           }, 50);
-        } else if (targetTab === 'tab-ciudadanos') {
-          // Reactivar listeners de la tabla de ciudadanos si ya existe
-          if (tablasGeneradas.ciudadanos) {
-            setTimeout(() => {
-              adjuntarListenersCiudadanos();
-              habilitarSeleccionCeldas();
-            }, 50);
-          }
         }
         
         // Re-habilitar selección en la nueva tabla
-        setTimeout(() => habilitarSeleccionCeldas(), 100);
+        setTimeout(() => habilitarSeleccionCeldas(), 50);
       });
       btn.hasListener = true;
     }
@@ -2521,4 +2755,3 @@
 
 </body>
 </html>
-
