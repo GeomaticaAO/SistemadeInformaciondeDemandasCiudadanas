@@ -429,6 +429,9 @@
         <canvas id="chartEstados"></canvas>
       </div>
 
+      <h4 class="sidebar-title">Tabla Top 10 Solicitudes con mayor Demanda</h4>
+      <div id="tablaTop10" class="tabla-resumen"></div>
+      
       <h4 class="sidebar-title">Tabla resumen</h4>
       <div id="tablaResumen" class="tabla-resumen"></div>
     </div>
@@ -1331,12 +1334,16 @@
     try {
       if (isMobile) {
         // Aplazar tabla en móviles para que gráficas se rendericen primero
-        setTimeout(() => generarTablaResumen(filtroTipo), 100);
+        setTimeout(() => {
+          generarTablaTop10(filtroTipo);
+          generarTablaResumen(filtroTipo);
+        }, 100);
       } else {
+        generarTablaTop10(filtroTipo);
         generarTablaResumen(filtroTipo);
       }
     } catch (e) {
-      console.log('Error actualizando tablaResumen:', e);
+      console.log('Error actualizando tablas:', e);
     }
 
     // ========== CHOROPLETH ==========
@@ -1425,6 +1432,133 @@
 
     // Ocultar overlay al terminar render (delay mayor en móviles)
     try { setTimeout(hideLoading, isMobile ? 800 : 500); } catch(e){}
+  }
+
+  // ========== GENERAR TABLA TOP 10 ==========
+  // Tabla Top 10 por tipo de solicitud (transpuesta de tabla resumen)
+  function generarTablaTop10(filtroTipo) {
+    // Filtrar SOLO por tipo si aplica
+    let datos = solicitudes;
+    if (filtroTipo && filtroTipo !== 'Todos') {
+      datos = solicitudes.filter(s => s["Tipo de reporte"] === filtroTipo);
+    }
+
+    // Agrupar por tipo y mes
+    let resumenPorTipo = {};
+    datos.forEach(s => {
+      if(!s["Fecha reporte"] || !s["Estado Reporte"] || !s["Tipo de reporte"]) return;
+      let fecha = new Date(s["Fecha reporte"]);
+      if(isNaN(fecha)) return;
+
+      let mesClave = fecha.getFullYear()+"-"+(fecha.getMonth()+1).toString().padStart(2,"0");
+      let tipo = s["Tipo de reporte"];
+      
+      if(!resumenPorTipo[tipo]) {
+        resumenPorTipo[tipo] = {};
+      }
+      if(!resumenPorTipo[tipo][mesClave]) {
+        resumenPorTipo[tipo][mesClave] = {
+          Pendiente: 0,
+          "En atención": 0,
+          total: 0
+        };
+      }
+
+      let estado = s["Estado Reporte"].trim();
+      if(estado==="Pendiente"){
+        resumenPorTipo[tipo][mesClave].Pendiente++;
+      } else if(estado==="En atención"){
+        resumenPorTipo[tipo][mesClave]["En atención"]++;
+      }
+    });
+
+    // Calcular totales por tipo y Pendientes/En Atención
+    let tiposConTotal = [];
+    for(let tipo in resumenPorTipo) {
+      let totalTipo = 0;
+      for(let mes in resumenPorTipo[tipo]) {
+        let pendMes = resumenPorTipo[tipo][mes].Pendiente + resumenPorTipo[tipo][mes]["En atención"];
+        resumenPorTipo[tipo][mes].total = pendMes;
+        totalTipo += pendMes;
+      }
+      tiposConTotal.push({ tipo: tipo, total: totalTipo });
+    }
+
+    // Ordenar y tomar top 10
+    tiposConTotal.sort((a, b) => b.total - a.total);
+    let top10 = tiposConTotal.slice(0, 10);
+
+    // Obtener TODOS los meses que existen en los datos
+    let todosLosMeses = new Set();
+    for(let tipo in resumenPorTipo) {
+      for(let mesClave in resumenPorTipo[tipo]) {
+        todosLosMeses.add(mesClave);
+      }
+    }
+    
+    // Convertir a array y ordenar cronológicamente
+    let mesesOrdenados = Array.from(todosLosMeses).sort();
+    
+    // Crear array de objetos con nombre
+    const mesesEspecificos = mesesOrdenados.map(mesClave => {
+      const [anio, mesNum] = mesClave.split("-");
+      const fecha = new Date(anio, parseInt(mesNum)-1);
+      let nombreMes = fecha.toLocaleString('es-ES',{month:'long'});
+      nombreMes = nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1);
+      return { clave: mesClave, nombre: nombreMes };
+    });
+
+    // Calcular indicador de días por columna (mes)
+    let indicadoresPorMes = {};
+    let totalMeses = mesesEspecificos.length;
+    mesesEspecificos.forEach((mesObj, idx) => {
+      let distanciaDesdeFinal = (totalMeses - 1) - idx;
+      let factor = distanciaDesdeFinal * 30;
+      if (distanciaDesdeFinal === 0) factor = 1;
+      
+      let sumaPendientes = 0;
+      top10.forEach(t => {
+        let valorMes = resumenPorTipo[t.tipo] && resumenPorTipo[t.tipo][mesObj.clave] 
+          ? resumenPorTipo[t.tipo][mesObj.clave].total 
+          : 0;
+        sumaPendientes += valorMes;
+      });
+      
+      indicadoresPorMes[mesObj.clave] = sumaPendientes * factor;
+    });
+
+    // Renderizar tabla
+    let tabla = `<table class="table table-striped">
+      <thead><tr>
+        <th>Tipo de Solicitud</th>`;
+    
+    mesesEspecificos.forEach(m => {
+      tabla += `<th>${m.nombre}</th>`;
+    });
+    tabla += `</tr></thead><tbody>`;
+
+    // Filas de tipos (Top 10)
+    top10.forEach(t => {
+      tabla += `<tr><td><strong>${t.tipo}</strong></td>`;
+      mesesEspecificos.forEach(m => {
+        let valor = resumenPorTipo[t.tipo] && resumenPorTipo[t.tipo][m.clave] 
+          ? resumenPorTipo[t.tipo][m.clave].total 
+          : 0;
+        tabla += `<td>${valor.toLocaleString('es-MX')}</td>`;
+      });
+      tabla += `</tr>`;
+    });
+
+    // Fila de indicador de días
+    tabla += `<tr style="font-weight:bold; background-color:#f0f0f0;">
+      <td>Indicador de días por solicitudes</td>`;
+    mesesEspecificos.forEach(m => {
+      tabla += `<td>${indicadoresPorMes[m.clave].toLocaleString('es-MX')}</td>`;
+    });
+    tabla += `</tr>`;
+
+    tabla += `</tbody></table>`;
+    document.getElementById("tablaTop10").innerHTML = tabla;
   }
 
   // ========== GENERAR TABLA RESUMEN ==========
@@ -2761,3 +2895,4 @@
 
 </body>
 </html>
+
