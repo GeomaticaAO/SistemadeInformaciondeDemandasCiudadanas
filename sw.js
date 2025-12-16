@@ -1,5 +1,5 @@
 // Service Worker para PWA - Cache básico
-const CACHE_NAME = 'geoportal-v7'; // ⬅️ INCREMENTAR ESTE NÚMERO CADA VEZ QUE ACTUALICES
+const CACHE_NAME = 'geoportal-v10'; // ⬅️ INCREMENTAR ESTE NÚMERO CADA VEZ QUE ACTUALICES
 const urlsToCache = [
   './',
   './style.css',
@@ -76,3 +76,4 @@ self.addEventListener('activate', event => {
     })
   );
 });
+
