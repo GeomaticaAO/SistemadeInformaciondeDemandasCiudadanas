@@ -429,7 +429,7 @@
         <canvas id="chartEstados"></canvas>
       </div>
 
-      <h4 class="sidebar-title">Tabla Top 10 Solicitudes con mayor Demanda</h4>
+      <h4 class="sidebar-title">Top 10 Solicitudes Pendientes con mayor demanda</h4>
       <div id="tablaTop10" class="tabla-resumen"></div>
       
       <h4 class="sidebar-title">Tabla resumen</h4>
@@ -1535,26 +1535,37 @@
     mesesEspecificos.forEach(m => {
       tabla += `<th>${m.nombre}</th>`;
     });
+    tabla += `<th>Total</th>`;
     tabla += `</tr></thead><tbody>`;
+
+    // Calcular total del indicador para la columna Total
+    let totalIndicadorGlobal = 0;
+    mesesEspecificos.forEach(m => {
+      totalIndicadorGlobal += indicadoresPorMes[m.clave];
+    });
 
     // Filas de tipos (Top 10)
     top10.forEach(t => {
       tabla += `<tr><td><strong>${t.tipo}</strong></td>`;
+      let totalFila = 0;
       mesesEspecificos.forEach(m => {
         let valor = resumenPorTipo[t.tipo] && resumenPorTipo[t.tipo][m.clave] 
           ? resumenPorTipo[t.tipo][m.clave].total 
           : 0;
+        totalFila += valor;
         tabla += `<td>${valor.toLocaleString('es-MX')}</td>`;
       });
+      tabla += `<td style="font-weight:bold;">${totalFila.toLocaleString('es-MX')}</td>`;
       tabla += `</tr>`;
     });
 
     // Fila de indicador de días
-    tabla += `<tr style="font-weight:bold; background-color:#f0f0f0;">
+    tabla += `<tr style="font-weight:bold;">
       <td>Indicador de días por solicitudes</td>`;
     mesesEspecificos.forEach(m => {
       tabla += `<td>${indicadoresPorMes[m.clave].toLocaleString('es-MX')}</td>`;
     });
+    tabla += `<td>${totalIndicadorGlobal.toLocaleString('es-MX')}</td>`;
     tabla += `</tr>`;
 
     tabla += `</tbody></table>`;
@@ -2329,6 +2340,14 @@
         } else {
           detailRow.classList.add('show');
           this.textContent = '▼';
+          
+          // Habilitar selección en la tabla de detalle recién expandida
+          setTimeout(() => {
+            const detailTable = detailRow.querySelector('.detail-table');
+            if (detailTable) {
+              habilitarSeleccionEnTabla(detailTable);
+            }
+          }, 50);
         }
       });
     });
@@ -2491,6 +2510,14 @@
         } else {
           detailRow.classList.add('show');
           this.textContent = '▼';
+          
+          // Habilitar selección en la tabla de detalle recién expandida
+          setTimeout(() => {
+            const detailTable = detailRow.querySelector('.detail-table');
+            if (detailTable) {
+              habilitarSeleccionEnTabla(detailTable);
+            }
+          }, 50);
         }
       });
     });
@@ -2503,77 +2530,95 @@
   let isSelecting = false;
   let selectedCells = new Set();
   
+  // Función auxiliar para habilitar selección en una tabla específica
+  function habilitarSeleccionEnTabla(table) {
+    const cells = table.querySelectorAll('td');
+    
+    cells.forEach(cell => {
+      // Solo habilitar en celdas con números
+      const text = cell.textContent.trim();
+      const parentRow = cell.closest('tr');
+      const isToggleRow = parentRow && parentRow.classList.contains('toggle-row');
+      const cellIndex = Array.from(cell.parentElement.children).indexOf(cell);
+      
+      // Excluir primera columna (icono) y columnas de teléfono/nombre (índices 1 y 2 en tabla principal)
+      if (isToggleRow && cellIndex <= 2) return;
+      if (cellIndex === 0 && cell.querySelector('.toggle-icon')) return;
+      
+      // Solo procesar si contiene número
+      if (!/^\d+$/.test(text)) return;
+      
+      // Evitar duplicar listeners
+      if (cell.hasSelectionListener) return;
+      
+      cell.style.userSelect = 'none';
+      cell.style.cursor = 'cell';
+      
+      const mouseDownHandler = function(e) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          // Shift+click: agregar a selección
+          if (this.classList.contains('selected')) {
+            this.classList.remove('selected');
+            selectedCells.delete(this);
+          } else {
+            this.classList.add('selected');
+            selectedCells.add(this);
+          }
+        } else {
+          // Click simple: nueva selección
+          selectedCells.forEach(c => c.classList.remove('selected'));
+          selectedCells.clear();
+          this.classList.add('selected');
+          selectedCells.add(this);
+          isSelecting = true;
+        }
+        calcularEstadisticas();
+      };
+      
+      const mouseEnterHandler = function() {
+        if (isSelecting && !this.querySelector('.toggle-icon')) {
+          this.classList.add('selected');
+          selectedCells.add(this);
+          calcularEstadisticas();
+        }
+      };
+      
+      cell.addEventListener('mousedown', mouseDownHandler);
+      cell.addEventListener('mouseenter', mouseEnterHandler);
+      cell.hasSelectionListener = true;
+    });
+  }
+  
   function habilitarSeleccionCeldas() {
     const statsBar = document.getElementById('statsBar');
     const tables = document.querySelectorAll('.tabla-ciudadanos, .detail-table');
     
     tables.forEach(table => {
-      // Seleccionar celdas con números (excluyendo primera columna del icono y columnas de texto)
-      const cells = table.querySelectorAll('td');
-      
-      cells.forEach(cell => {
-        // Solo habilitar en celdas con números
-        const text = cell.textContent.trim();
-        const parentRow = cell.closest('tr');
-        const isToggleRow = parentRow && parentRow.classList.contains('toggle-row');
-        const cellIndex = Array.from(cell.parentElement.children).indexOf(cell);
-        
-        // Excluir primera columna (icono) y columnas de teléfono/nombre (índices 1 y 2 en tabla principal)
-        if (isToggleRow && cellIndex <= 2) return;
-        if (cellIndex === 0 && cell.querySelector('.toggle-icon')) return;
-        
-        // Solo procesar si contiene número
-        if (!/^\d+$/.test(text)) return;
-        
-        cell.style.userSelect = 'none';
-        cell.style.cursor = 'cell';
-        
-        cell.addEventListener('mousedown', function(e) {
-          e.preventDefault();
-          if (e.shiftKey) {
-            // Shift+click: agregar a selección
-            if (this.classList.contains('selected')) {
-              this.classList.remove('selected');
-              selectedCells.delete(this);
-            } else {
-              this.classList.add('selected');
-              selectedCells.add(this);
-            }
-          } else {
-            // Click simple: nueva selección
-            selectedCells.forEach(c => c.classList.remove('selected'));
-            selectedCells.clear();
-            this.classList.add('selected');
-            selectedCells.add(this);
-            isSelecting = true;
-          }
-          calcularEstadisticas();
-        });
-        
-        cell.addEventListener('mouseenter', function() {
-          if (isSelecting && !this.querySelector('.toggle-icon')) {
-            this.classList.add('selected');
-            selectedCells.add(this);
-            calcularEstadisticas();
-          }
-        });
+      habilitarSeleccionEnTabla(table);
+    });
+    
+    // Event listener global para mouseup (solo una vez)
+    if (!document.hasGlobalMouseUp) {
+      document.addEventListener('mouseup', () => {
+        isSelecting = false;
       });
-    });
+      document.hasGlobalMouseUp = true;
+    }
     
-    document.addEventListener('mouseup', () => {
-      isSelecting = false;
-    });
-    
-    // Cerrar barra al hacer clic fuera de las tablas
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.tabla-ciudadanos') && 
-          !e.target.closest('.detail-table') && 
-          !e.target.closest('#statsBar')) {
-        selectedCells.forEach(c => c.classList.remove('selected'));
-        selectedCells.clear();
-        if (statsBar) statsBar.style.display = 'none';
-      }
-    });
+    // Cerrar barra al hacer clic fuera de las tablas (solo una vez)
+    if (!document.hasGlobalClickOutside) {
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.tabla-ciudadanos') && 
+            !e.target.closest('.detail-table') && 
+            !e.target.closest('#statsBar')) {
+          selectedCells.forEach(c => c.classList.remove('selected'));
+          selectedCells.clear();
+          if (statsBar) statsBar.style.display = 'none';
+        }
+      });
+      document.hasGlobalClickOutside = true;
+    }
   }
   
   function calcularEstadisticas() {
